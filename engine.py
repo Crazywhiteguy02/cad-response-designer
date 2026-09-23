@@ -40,10 +40,15 @@ class SimulationState:
 def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
     units: list[ScenarioUnit] = []
     for _, r in frame.iterrows():
-        # v0.4.1 exposes AFR1/AFR2 as an explicit dropdown while preserving
-        # a free-text field for all other equipment. Older frames containing
-        # only an Equipment column remain supported.
-        if "AFR Equipment" in frame.columns or "Other Equipment" in frame.columns:
+        # v0.4.2 uses one list-valued Equipment field. Older AFR/Other
+        # and free-text Equipment formats are still accepted.
+        if "Equipment" in frame.columns:
+            raw_equipment = r.get("Equipment", [])
+            if isinstance(raw_equipment, (list, tuple, set)):
+                equipment_text = ", ".join(str(x).strip() for x in raw_equipment if str(x).strip())
+            else:
+                equipment_text = str(raw_equipment or "")
+        elif "AFR Equipment" in frame.columns or "Other Equipment" in frame.columns:
             equipment_parts = []
             afr = str(r.get("AFR Equipment", "") or "").strip()
             other = str(r.get("Other Equipment", "") or "").strip()
@@ -53,7 +58,7 @@ def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
                 equipment_parts.append(other)
             equipment_text = ", ".join(equipment_parts)
         else:
-            equipment_text = str(r.get("Equipment", ""))
+            equipment_text = ""
 
         units.append(
             ScenarioUnit(
@@ -237,11 +242,22 @@ def simulate_alpha(units: list[ScenarioUnit]) -> SimulationState:
 
 
 def pair_conflicts(frame: pd.DataFrame) -> list[tuple[str, str]]:
+    """Find simultaneous base/M-suffix unit pairs without exposing a Pair Unit column.
+
+    Examples:
+      E421 + E421M
+      E421B + E421BM
+      TT425 + TT425M
+      HM401 + HM401M
+    """
     selected = set(frame["Unit ID"].astype(str))
-    pairs = []
-    for _, row in frame.iterrows():
-        pair = str(row.get("Pair Unit", ""))
-        uid = str(row["Unit ID"])
-        if pair and pair in selected and uid < pair:
-            pairs.append((uid, pair))
-    return pairs
+    pairs: set[tuple[str, str]] = set()
+
+    for uid in selected:
+        if uid.endswith("M") and len(uid) > 1:
+            base = uid[:-1]
+            if base in selected:
+                pairs.add((base, uid))
+
+    return sorted(pairs)
+

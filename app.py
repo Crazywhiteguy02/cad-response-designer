@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import pandas as pd
 import streamlit as st
 
@@ -7,14 +8,37 @@ from requirements import REQUIREMENTS
 from alpha_plan import ALPHA_STEPS
 from engine import scenario_units_from_frame, simulate_alpha, pair_conflicts
 
-st.set_page_config(page_title="CAD Response Designer v0.4.1", layout="wide")
-st.title("CAD Response Designer — Prototype v0.4.1")
+st.set_page_config(page_title="CAD Response Designer v0.4.2", layout="wide")
+st.title("CAD Response Designer — Prototype v0.4.2")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
 )
 
 catalog = load_catalog()
+
+# Known equipment codes gathered from the supplied CADDBM screenshots/data.
+# The editor also accepts new values so this list does not limit future testing.
+EQUIPMENT_OPTIONS = [
+    "40mm",
+    "4X4",
+    "4X4PASS",
+    "AFR1",
+    "AFR2",
+    "AIUEQ",
+    "BLOOD",
+    "CAFS",
+    "CHAIN SAW",
+    "CSU DUTY",
+    "DUTY INV",
+    "OPS BC",
+    "OPS DC",
+    "PLOW",
+    "RSI",
+    "TOW",
+    "VENT",
+    "WINCH",
+]
 
 default_units = [
     "M421", "A421", "E426", "E435", "TT425M", "ALS401",
@@ -28,6 +52,26 @@ if "scenario_overrides" not in st.session_state:
 scenario_tab, catalog_tab, req_tab = st.tabs(
     ["Scenario & ALPHA", "Unit Catalog", "Requirement Library"]
 )
+
+
+def _equipment_list_from_saved(saved: dict) -> list[str]:
+    """Normalize equipment from v0.4/v0.4.1 or v0.4.2 session data."""
+    value = saved.get("Equipment")
+    if isinstance(value, (list, tuple, set)):
+        return [str(x).strip() for x in value if str(x).strip()]
+    if isinstance(value, str) and value.strip():
+        return [x.strip() for x in value.replace(";", ",").split(",") if x.strip()]
+
+    # Migrate v0.4.1 split equipment fields if they exist in the session.
+    parts = []
+    afr = str(saved.get("AFR Equipment", "") or "").strip()
+    other = str(saved.get("Other Equipment", "") or "").strip()
+    if afr:
+        parts.append(afr)
+    if other:
+        parts.extend(x.strip() for x in other.replace(";", ",").split(",") if x.strip())
+    return list(dict.fromkeys(parts))
+
 
 with scenario_tab:
     st.subheader("Operational test scenario")
@@ -50,24 +94,15 @@ with scenario_tab:
         uid = r["unit_id"]
         saved = st.session_state.scenario_overrides.get(uid, {})
 
-        # Backward compatibility with the v0.4 free-text Equipment field, if it exists
-        # in session state from the current Streamlit session.
-        old_equipment = str(saved.get("Equipment", ""))
-        old_codes = [x.strip() for x in old_equipment.replace(";", ",").split(",") if x.strip()]
-        old_afr = next((x for x in old_codes if x in {"AFR1", "AFR2"}), "")
-        old_other = ", ".join(x for x in old_codes if x not in {"AFR1", "AFR2"})
-
         rows.append({
             "Unit ID": uid,
             "Unit Type": r["unit_type"],
             "Beat": saved.get("Beat", r["beat"]),
             "Station": r["station_id"],
             "Attributes": saved.get("Attributes", r["default_attributes"]),
-            "AFR Equipment": saved.get("AFR Equipment", old_afr),
-            "Other Equipment": saved.get("Other Equipment", old_other),
+            "Equipment": _equipment_list_from_saved(saved),
             "M Skills": saved.get("M Skills", int(r["default_m_skill"])),
             "Test Distance": saved.get("Test Distance", 5.0),
-            "Pair Unit": r["pair_unit_id"],
             "Typical ALS Equipment": r["typical_als_equipment"],
         })
 
@@ -75,9 +110,9 @@ with scenario_tab:
 
     if not scenario_df.empty:
         st.caption(
-            "Use the AFR Equipment dropdown to assign AFR1 or AFR2. "
-            "Use Other Equipment for additional equipment codes, separated by commas. "
-            "M-suffix units normally have AFR1 or AFR2, but the app does not guess which one."
+            "Equipment is now one multi-select field. Choose any combination of equipment codes "
+            "for a unit, such as AFR1 + VENT. You can also type a new equipment code if it is not "
+            "already in the dropdown."
         )
 
         edited = st.data_editor(
@@ -85,25 +120,29 @@ with scenario_tab:
             hide_index=True,
             use_container_width=True,
             disabled=[
-                "Unit ID", "Unit Type", "Station", "Pair Unit",
-                "Typical ALS Equipment"
+                "Unit ID", "Unit Type", "Station", "Typical ALS Equipment"
             ],
             column_config={
-                "AFR Equipment": st.column_config.SelectboxColumn(
-                    "AFR Equipment",
-                    options=["", "AFR1", "AFR2"],
-                    help="Select the currently assigned ALS first-response equipment for this unit."
-                ),
-                "Other Equipment": st.column_config.TextColumn(
-                    "Other Equipment",
-                    help="Optional comma-separated equipment codes."
+                "Equipment": st.column_config.MultiselectColumn(
+                    "Equipment",
+                    options=EQUIPMENT_OPTIONS,
+                    accept_new_options=True,
+                    help=(
+                        "Select one or more equipment codes. "
+                        "New codes may also be entered for testing."
+                    ),
+                    width="large",
                 ),
                 "M Skills": st.column_config.NumberColumn(
-                    "M Skills", min_value=0, step=1,
+                    "M Skills",
+                    min_value=0,
+                    step=1,
                     help="Number of rostered personnel with personnel skill M."
                 ),
                 "Test Distance": st.column_config.NumberColumn(
-                    "Test Distance", min_value=0.0, step=0.1,
+                    "Test Distance",
+                    min_value=0.0,
+                    step=0.1,
                     help="Temporary stand-in for CAD routing/proximity."
                 ),
                 "Typical ALS Equipment": st.column_config.TextColumn(
@@ -115,31 +154,36 @@ with scenario_tab:
         )
 
         for _, row in edited.iterrows():
+            equipment = row.get("Equipment", [])
+            if not isinstance(equipment, list):
+                equipment = [] if pd.isna(equipment) else [str(equipment)]
             st.session_state.scenario_overrides[str(row["Unit ID"])] = {
                 "Beat": str(row["Beat"]),
                 "Attributes": str(row["Attributes"]),
-                "AFR Equipment": str(row["AFR Equipment"]),
-                "Other Equipment": str(row["Other Equipment"]),
+                "Equipment": equipment,
                 "M Skills": int(row["M Skills"]),
                 "Test Distance": float(row["Test Distance"]),
             }
 
-        # Make missing ALS equipment conspicuous for the common M-suffix operational units.
+        # Make missing ALS equipment conspicuous for M-suffix units that normally carry it.
         m_suffix_missing_afr = []
         for _, row in edited.iterrows():
             uid = str(row["Unit ID"])
             typical = str(row.get("Typical ALS Equipment", ""))
-            afr = str(row.get("AFR Equipment", ""))
-            if typical == "AFR1 or AFR2" and afr not in {"AFR1", "AFR2"}:
+            equipment = row.get("Equipment", [])
+            if not isinstance(equipment, list):
+                equipment = [] if pd.isna(equipment) else [str(equipment)]
+            if typical == "AFR1 or AFR2" and not ({"AFR1", "AFR2"} & set(equipment)):
                 m_suffix_missing_afr.append(uid)
 
         if m_suffix_missing_afr:
             st.warning(
                 "AFR equipment is not assigned for these units that normally carry AFR1 or AFR2: "
                 + ", ".join(m_suffix_missing_afr)
-                + ". Select AFR1 or AFR2 in the AFR Equipment column before testing ALS/AFR logic."
+                + ". Add AFR1 or AFR2 in the Equipment field before testing ALS/AFR logic."
             )
 
+        # Pair checking is still active internally, but the Pair Unit column is no longer shown.
         conflicts = pair_conflicts(edited)
         if conflicts:
             pairs = ", ".join(f"{a} + {b}" for a, b in conflicts)
@@ -175,7 +219,7 @@ with scenario_tab:
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.4.1"):
+    with st.expander("Current ALPHA flow modeled in v0.4.2"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
@@ -218,14 +262,13 @@ with catalog_tab:
         "unit_type": "Unit Type",
         "beat": "Beat",
         "station_id": "Station",
-        "pair_unit_id": "Pair Unit",
         "default_attributes": "Modeled Attributes",
         "default_m_skill": "Default M Skills",
         "typical_als_equipment": "Typical ALS Equipment",
         "attribute_source": "Attribute Source"
     })[
         [
-            "Unit ID", "Unit Type", "Beat", "Station", "Pair Unit",
+            "Unit ID", "Unit Type", "Beat", "Station",
             "Modeled Attributes", "Default M Skills",
             "Typical ALS Equipment", "Attribute Source"
         ]
