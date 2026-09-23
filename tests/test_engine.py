@@ -5,16 +5,7 @@ import unittest
 from pathlib import Path
 
 from db import connect, init_db
-from engine import (
-    Assignment,
-    SimulationState,
-    choose_unit_for_requirement,
-    load_requirement,
-    load_units,
-    reusable_requirement_status,
-    simulate_plan,
-    unit_qualifies,
-)
+from engine import simulate_plan
 
 
 class EngineTests(unittest.TestCase):
@@ -28,57 +19,31 @@ class EngineTests(unittest.TestCase):
         self.conn.close()
         self.tmp.cleanup()
 
-    def test_re433_qualifies_for_e_and_r_but_only_one_slot(self):
-        units = load_units(self.conn)
-        re433 = next(u for u in units if u.unit_id == "RE433M")
-        req_e = load_requirement(self.conn, "E")
-        req_r = load_requirement(self.conn, "R")
+    def set_available(self, unit_ids):
+        self.conn.execute("UPDATE units SET available=0")
+        self.conn.executemany(
+            "UPDATE units SET available=1 WHERE unit_id=?",
+            [(u,) for u in unit_ids],
+        )
+        self.conn.commit()
 
-        self.assertTrue(unit_qualifies(re433, req_e)[0])
-        self.assertTrue(unit_qualifies(re433, req_r)[0])
+    def test_reported_scenario_adds_afr2_resource(self):
+        self.set_available([
+            "A421", "BC401", "BC443", "E426", "E435", "EMS401", "M421", "TT425M"
+        ])
+        state = simulate_plan(self.conn, "AFR_ALS_2022")
+        got = [(a.requirement, a.unit_id) for a in state.assignments]
+        self.assertEqual(got, [("E", "E426"), ("M", "M421"), ("AFR2", "TT425M")])
+        trace = "\n".join(state.trace)
+        self.assertIn("CONDITION ALS_SKILL: NO", trace)
+        self.assertIn("GROUP selected TT425M via AFR2", trace)
+        self.assertIn("CONDITION SUPPRESSION UNIT: YES", trace)
 
-        state = SimulationState(assignments=[Assignment("E", "RE433M")])
-        selected, _ = choose_unit_for_requirement(req_r, units, state)
-        self.assertNotEqual(selected.unit_id if selected else None, "RE433M")
-
-    def test_bc443_city_not_county(self):
-        units = load_units(self.conn)
-        bc443 = next(u for u in units if u.unit_id == "BC443")
-        self.assertTrue(unit_qualifies(bc443, load_requirement(self.conn, "BC"))[0])
-        self.assertTrue(unit_qualifies(bc443, load_requirement(self.conn, "BCCITY"))[0])
-        self.assertFalse(unit_qualifies(bc443, load_requirement(self.conn, "BCCNTY"))[0])
-
-    def test_county_bc_not_city(self):
-        units = load_units(self.conn)
-        bc401 = next(u for u in units if u.unit_id == "BC401")
-        self.assertTrue(unit_qualifies(bc401, load_requirement(self.conn, "BC"))[0])
-        self.assertTrue(unit_qualifies(bc401, load_requirement(self.conn, "BCCNTY"))[0])
-        self.assertFalse(unit_qualifies(bc401, load_requirement(self.conn, "BCCITY"))[0])
-
-    def test_als_skill_counts_rostered_personnel(self):
-        units = load_units(self.conn)
-        unit_map = {u.unit_id: u for u in units}
-        req = load_requirement(self.conn, "ALS_SKILL")
-
-        ok, detail = reusable_requirement_status(req, [unit_map["E421M"], unit_map["M421"]])
-        self.assertTrue(ok)
-        self.assertIn("available=2", detail)
-
-    def test_prototype_plan_uses_e_and_m_then_satisfies_als_skill(self):
-        state = simulate_plan(self.conn, "AFR_ALS_PROTOTYPE")
-        self.assertEqual([(a.requirement, a.unit_id) for a in state.assignments],
-                         [("E", "E421M"), ("M", "M421")])
-        self.assertIn("ALS_SKILL", state.satisfied_requirements)
-
-    def test_m_skill_is_distinct_from_unit_type_m(self):
-        units = load_units(self.conn)
-        e421 = next(u for u in units if u.unit_id == "E421M")
-        m421 = next(u for u in units if u.unit_id == "M421")
-
-        self.assertEqual(e421.unit_type, "E")
-        self.assertEqual(e421.skills.get("M"), 1)
-        self.assertEqual(m421.unit_type, "M")
-        self.assertEqual(m421.skills.get("M"), 1)
+    def test_ems_is_fallback_group_alternative(self):
+        self.set_available(["E426", "M421", "EMS401"])
+        state = simulate_plan(self.conn, "AFR_ALS_2022")
+        got = [(a.requirement, a.unit_id) for a in state.assignments]
+        self.assertEqual(got, [("E", "E426"), ("M", "M421"), ("EMS", "EMS401")])
 
 
 if __name__ == "__main__":

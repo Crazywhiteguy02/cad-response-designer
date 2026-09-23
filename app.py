@@ -5,81 +5,59 @@ import streamlit as st
 from db import connect, init_db
 from engine import load_units, simulate_plan
 
-
-st.set_page_config(page_title="CAD Response Designer v0.1", layout="wide")
+st.set_page_config(page_title="CAD Response Designer v0.2", layout="wide")
 init_db()
+conn = connect()
 
-st.title("CAD Response Designer — Prototype v0.1")
+st.title("CAD Response Designer — Prototype v0.2")
 st.caption(
-    "Validation prototype for resource qualification, exclusive response slots, "
-    "and roster-derived ALS personnel skills."
+    "AFR/ALS requirement-group validation with exclusive resource slots and roster-derived M skills."
 )
 
 with st.sidebar:
     st.header("Controls")
     if st.button("Reset sample database"):
+        conn.close()
         init_db(reset=True)
-        st.success("Database reset.")
         st.rerun()
 
-conn = connect()
-
-st.subheader("Representative resource state")
+st.subheader("Unit availability")
 units = load_units(conn)
-
-rows = []
-for u in sorted(units, key=lambda x: (x.priority, x.unit_id)):
-    rows.append(
-        {
-            "Unit ID": u.unit_id,
-            "Type": u.unit_type,
-            "Attributes": ", ".join(sorted(u.attributes)),
-            "Equipment": ", ".join(f"{k} x{v}" for k, v in sorted(u.equipment.items())),
-            "M-skilled personnel": u.skills.get("M", 0),
-            "Available": u.available,
-            "Priority": u.priority,
-        }
-    )
-
-st.dataframe(rows, use_container_width=True, hide_index=True)
-
-st.subheader("Availability")
-st.write(
-    "Priority is currently a deterministic stand-in for CAD proximity/routing. "
-    "Toggle units unavailable to test fallback behavior."
-)
-
 cols = st.columns(3)
-for idx, u in enumerate(sorted(units, key=lambda x: x.unit_id)):
+for idx, unit in enumerate(sorted(units, key=lambda x: x.unit_id)):
     with cols[idx % 3]:
-        checked = st.checkbox(u.unit_id, value=u.available, key=f"avail_{u.unit_id}")
-        if checked != u.available:
+        checked = st.checkbox(unit.unit_id, value=unit.available, key=f"avail_{unit.unit_id}")
+        if checked != unit.available:
             conn.execute(
-                "UPDATE units SET available = ? WHERE unit_id = ?",
-                (int(checked), u.unit_id),
+                "UPDATE units SET available=? WHERE unit_id=?", (int(checked), unit.unit_id)
             )
             conn.commit()
 
 st.subheader("Simulation")
-plan = st.selectbox("Plan", ["AFR_ALS_PROTOTYPE"])
+st.write(
+    "The historical AFR_ALS flow is now represented with OR requirement groups. "
+    "Actual routing/proximity is not implemented yet; sample Priority is a deterministic stand-in."
+)
 
 if st.button("Simulate", type="primary"):
-    state = simulate_plan(conn, plan)
-
+    state = simulate_plan(conn, "AFR_ALS_2022")
     st.markdown("#### Recommended resources")
     st.dataframe(
-        [{"Requirement": a.requirement, "Unit": a.unit_id} for a in state.assignments],
+        [
+            {"Step": a.source_step, "Requirement": a.requirement, "Unit": a.unit_id}
+            for a in state.assignments
+        ],
         use_container_width=True,
         hide_index=True,
     )
-
     st.markdown("#### Explanation trace")
     st.code("\n".join(state.trace), language="text")
 
-st.divider()
-st.caption(
-    "This version validates the core rule engine. Exact response-plan graphs, routing, "
-    "nested plans, and import workflows are intentionally deferred."
+st.subheader("Definitions still needed")
+st.info(
+    "AFR3, AFR4, HM440M, HM440, and generic A are present in the AFR_ALS response plan, "
+    "but their exact requirement definitions have not yet been supplied. The simulator retains "
+    "them in the plan and reports them as unresolved instead of guessing their criteria."
 )
 
 conn.close()
