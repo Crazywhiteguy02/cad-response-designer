@@ -8,6 +8,8 @@ CATALOG_PATH = Path(__file__).with_name("data") / "unit_catalog.csv"
 def load_catalog() -> pd.DataFrame:
     df = pd.read_csv(CATALOG_PATH, dtype=str).fillna("")
     df["default_m_skill"] = pd.to_numeric(df["default_m_skill"], errors="coerce").fillna(0).astype(int)
+    if "default_equipment" not in df.columns:
+        df["default_equipment"] = ""
     return df
 
 

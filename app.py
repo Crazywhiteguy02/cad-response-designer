@@ -8,8 +8,8 @@ from requirements import REQUIREMENTS
 from alpha_plan import ALPHA_STEPS
 from engine import scenario_units_from_frame, simulate_alpha, pair_conflicts
 
-st.set_page_config(page_title="CAD Response Designer v0.4.4", layout="wide")
-st.title("CAD Response Designer — Prototype v0.4.4")
+st.set_page_config(page_title="CAD Response Designer v0.4.6", layout="wide")
+st.title("CAD Response Designer — Prototype v0.4.6")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
@@ -91,23 +91,31 @@ scenario_tab, catalog_tab, req_tab = st.tabs(
 )
 
 
-def _equipment_list_from_saved(saved: dict) -> list[str]:
-    """Normalize equipment from v0.4/v0.4.1 or v0.4.4 session data."""
-    value = saved.get("Equipment")
-    if isinstance(value, (list, tuple, set)):
-        return [str(x).strip() for x in value if str(x).strip()]
-    if isinstance(value, str) and value.strip():
-        return [x.strip() for x in value.replace(";", ",").split(",") if x.strip()]
+def _equipment_list_from_saved(saved: dict, default_value="") -> list[str]:
+    """Normalize equipment while preserving an intentional empty user override."""
+    if "Equipment" in saved:
+        value = saved.get("Equipment")
+        if isinstance(value, (list, tuple, set)):
+            return [str(x).strip() for x in value if str(x).strip()]
+        if isinstance(value, str):
+            return [x.strip() for x in value.replace(";", ",").split(",") if x.strip()]
+        return []
 
     # Migrate v0.4.1 split equipment fields if they exist in the session.
-    parts = []
-    afr = str(saved.get("AFR Equipment", "") or "").strip()
-    other = str(saved.get("Other Equipment", "") or "").strip()
-    if afr:
-        parts.append(afr)
-    if other:
-        parts.extend(x.strip() for x in other.replace(";", ",").split(",") if x.strip())
-    return list(dict.fromkeys(parts))
+    if "AFR Equipment" in saved or "Other Equipment" in saved:
+        parts = []
+        afr = str(saved.get("AFR Equipment", "") or "").strip()
+        other = str(saved.get("Other Equipment", "") or "").strip()
+        if afr:
+            parts.append(afr)
+        if other:
+            parts.extend(x.strip() for x in other.replace(";", ",").split(",") if x.strip())
+        return list(dict.fromkeys(parts))
+
+    if isinstance(default_value, (list, tuple, set)):
+        return [str(x).strip() for x in default_value if str(x).strip()]
+    text = str(default_value or "").strip()
+    return [x.strip() for x in text.replace(";", ",").split(",") if x.strip()]
 
 
 def _attribute_list_from_value(value) -> list[str]:
@@ -153,7 +161,7 @@ with scenario_tab:
             "Attributes": _attribute_list_from_value(
                 saved.get("Attributes", r["default_attributes"])
             ),
-            "Equipment": _equipment_list_from_saved(saved),
+            "Equipment": _equipment_list_from_saved(saved, r.get("default_equipment", "")),
             "M Skills": saved.get("M Skills", int(r["default_m_skill"])),
             "Test Distance": saved.get("Test Distance", 5.0),
             "Typical ALS Equipment": r["typical_als_equipment"],
@@ -246,7 +254,7 @@ with scenario_tab:
             equipment = row.get("Equipment", [])
             if not isinstance(equipment, list):
                 equipment = [] if pd.isna(equipment) else [str(equipment)]
-            if typical == "AFR1 or AFR2" and not ({"AFR1", "AFR2"} & set(equipment)):
+            if typical in {"AFR1", "AFR2", "AFR1 or AFR2"} and not ({"AFR1", "AFR2"} & set(equipment)):
                 m_suffix_missing_afr.append(uid)
 
         if m_suffix_missing_afr:
@@ -292,7 +300,7 @@ with scenario_tab:
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.4.4"):
+    with st.expander("Current ALPHA flow modeled in v0.4.6"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
@@ -337,12 +345,13 @@ with catalog_tab:
         "station_id": "Station",
         "default_attributes": "Modeled Attributes",
         "default_m_skill": "Default M Skills",
+        "default_equipment": "Default Equipment",
         "typical_als_equipment": "Typical ALS Equipment",
         "attribute_source": "Attribute Source"
     })[
         [
             "Unit ID", "Unit Type", "Beat", "Station",
-            "Modeled Attributes", "Default M Skills",
+            "Modeled Attributes", "Default M Skills", "Default Equipment",
             "Typical ALS Equipment", "Attribute Source"
         ]
     ]
