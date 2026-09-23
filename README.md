@@ -1,30 +1,45 @@
-# CAD Response Designer — Prototype v0.3
+# CAD Response Designer — Prototype v0.4
 
-v0.3 keeps the v0.2.1 AFR/ALS OR-group logic and detailed resource table, and corrects the resource profiles based on the latest CAD configuration information.
+This version moves the prototype to the current **ALPHA** response plan and imports the complete unit catalog supplied from CADDBM.
 
-## v0.3 changes
+## What changed
 
-- `ALS FIRST RESP` is no longer treated as a standard attribute on all engines.
-- For representative engines, trucks, towers, tillers, and rescues, `ALS FIRST RESP` follows the `M`-suffix unit.
-- `E426` and `E435` therefore do **not** carry `ALS FIRST RESP`.
-- `E421M`, `RE433M`, `R421M`, `T421M`, `TL440M`, and `TT425M` do carry `ALS FIRST RESP`.
-- Current hazmat resources were added to the catalog:
-  - `HM401` — Unit Type `HM`; RESCUE, HAZMAT, HEAVY, EXTRICATION
-  - `HM401M` — Unit Type `HM`; ALS FIRST RESP, RESCUE, HAZMAT, HEAVY, EXTRICATION
-  - Both use Station `440` and Beat `440` as shown in the supplied unit definitions.
-- `HM401` and `HM401M` default to unavailable in the historical AFR_ALS test scenario so they do not silently alter the 2022 validation case. You can toggle them on manually.
-- No personnel skill `M` or equipment has been assumed for HM401/HM401M because those details have not yet been supplied.
-- Historical `HM440` / `HM440M` response-plan references remain historical and unresolved. They are not automatically rewritten to HM401/HM401M.
+- Imports 5,757 FIRE/F1 unit records from the supplied 191-page `All unit definitions.pdf` report.
+- Adds a searchable Unit Catalog tab.
+- Uses the current ALPHA response-plan flow instead of the legacy AFR plan.
+- Adds current requirements for `CHASE CAR`, `ALS CHASE CAR`, `EMS COUNTY`, `HM401`, and `HM401M`.
+- Models `ALS401`–`ALS404` as Unit Type `ALS` with `COUNTY` and `CHASE CAR`.
+- Models Fairfax/City EMS units as `COUNTY`, `BALLISTIC`, and `CHASE CAR`.
+- Models the M-suffix rule for local engines, trucks, towers, tillers, rescues, and HM401M.
+- Detects base/M-pair conflicts in a test scenario.
+- Adds editable scenario values for Beat, Attributes, Equipment, M-skill count, and Test Distance.
+- Enforces ALPHA's initial M `Max Distance 10` against the editable Test Distance value.
 
-## Historical AFR_ALS flow currently modeled
+## Important modeling boundary
 
-- Initial group: AFR1 / AFR2 / AFR3 / AFR4 / HM440M / E / T / TL / TT / R / HM440 / A
-- M
-- ALS_SKILL Recommended?
-- If NO: AFR1 / AFR2 / AFR3 / AFR4 / EMS
-- SUPPRESSION UNIT Recommended?
-- If NO: AFR1 / AFR2 / HM440M / E / T / TL / TT / R / HM440
+The unit-definition report supplies Unit ID, Unit Type, Agency, Dispatch Group, Beat, and Station ID. It does **not** include every unit's attributes, equipment, or current roster. v0.4 therefore only pre-populates attributes where the user explicitly supplied a family or exact-unit rule. Other catalog records remain `Unknown / not modeled` rather than being guessed.
 
-AFR3, AFR4, HM440M, HM440, and generic A remain explicitly unresolved until their exact requirement definitions are supplied.
+`AFR1` / `AFR2` equipment is intentionally not auto-assigned to every M-suffix resource because the user stated those units typically use either AFR1 or AFR2, but the exact equipment assignment varies. Enter the actual equipment in the Scenario editor for the test being run.
 
-For Streamlit Community Cloud, replace the existing project files in GitHub with the v0.3 files. Streamlit should redeploy automatically.
+## Running on Streamlit Community Cloud
+
+Replace the files in the existing GitHub repository with this package. Streamlit should redeploy automatically. The entrypoint remains:
+
+`app.py`
+
+## v0.4 ALPHA flow
+
+1. `M`, Max Distance 10.
+2. If that fails: `M OR ALS CHASE CAR OR EMS`.
+3. `M Recommended?`; if No: `M OR A`.
+4. `CHASE CAR Recommended?`.
+   - Yes: `AFR1 OR AFR2 OR E OR T OR TL OR TT OR R OR HM401 OR HM401M`.
+   - No: `AFR1 OR AFR2 OR ALS CHASE CAR OR EMS COUNTY OR E OR T OR TL OR TT OR R OR HM401 OR HM401M`.
+5. `ALS_SKILL Recommended?`; if No: `ALS CHASE CAR OR EMS OR AFR1 OR AFR2`.
+6. `SUPPRESSION UNIT Recommended?`; if No: `AFR1 OR AFR2 OR E OR T OR TL OR TT OR R OR HM401 OR HM401M`.
+
+Hatched/blank branches in the supplied ALPHA flowchart are represented as pass-through branches.
+
+## Routing limitation
+
+The prototype does not have I/CAD street-network travel calculations. `Test Distance` is an explicit simulation input used to rank candidates and to test the Max Distance 10 rule. This is not presented as actual CAD travel distance.

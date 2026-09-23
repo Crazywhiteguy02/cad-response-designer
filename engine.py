@@ -1,44 +1,30 @@
 from __future__ import annotations
-
 from dataclasses import dataclass, field
-import json
-import sqlite3
+from typing import Iterable
+import pandas as pd
+
+from requirements import REQUIREMENTS, Requirement
+from alpha_plan import ALPHA_STEPS, PlanStep
+from catalog import attributes_from_text, equipment_from_text
 
 
 @dataclass
-class Requirement:
-    name: str
-    quantity: int
-    unit_type: str | None
-    attributes: list[str]
-    attribute_mode: str
-    equipment: list[str]
-    skills: list[str]
-    beat_option: str
-    allow_existing_units: bool
-    notes: str | None
-    definition_status: str
-
-
-@dataclass
-class UnitState:
+class ScenarioUnit:
     unit_id: str
     unit_type: str
+    beat: str
+    station_id: str
     attributes: set[str]
     equipment: dict[str, int]
-    skills: dict[str, int]
-    priority: int
-    available: bool
-    recommendable: bool
-    station: str | None = None
-    beat: str | None = None
+    m_skill_count: int
+    test_distance: float
 
 
 @dataclass
 class Assignment:
+    step: int
     requirement: str
     unit_id: str
-    source_step: int
 
 
 @dataclass
@@ -51,52 +37,32 @@ class SimulationState:
         return {a.unit_id for a in self.assignments}
 
 
-def load_requirement(conn: sqlite3.Connection, name: str) -> Requirement:
-    row = conn.execute("SELECT * FROM requirements WHERE name=?", (name,)).fetchone()
-    if not row:
-        raise KeyError(f"Unknown requirement: {name}")
-    return Requirement(
-        row["name"], row["quantity"], row["unit_type"],
-        json.loads(row["attributes_json"]), row["attribute_mode"],
-        json.loads(row["equipment_json"]), json.loads(row["skills_json"]),
-        row["beat_option"], bool(row["allow_existing_units"]), row["notes"],
-        row["definition_status"],
-    )
-
-
-def load_units(conn: sqlite3.Connection) -> list[UnitState]:
-    units = []
-    for row in conn.execute("SELECT * FROM units"):
-        attrs = {r["attribute"] for r in conn.execute(
-            "SELECT attribute FROM unit_attributes WHERE unit_id=?", (row["unit_id"],)
-        )}
-        equipment = {r["equipment_code"]: r["quantity"] for r in conn.execute(
-            "SELECT equipment_code, quantity FROM unit_equipment WHERE unit_id=?", (row["unit_id"],)
-        )}
-        skill_rows = conn.execute(
-            """SELECT ps.skill_code, COUNT(*) AS n
-               FROM roster r JOIN personnel_skills ps ON ps.employee_id=r.employee_id
-               WHERE r.unit_id=? GROUP BY ps.skill_code""",
-            (row["unit_id"],),
-        ).fetchall()
-        skills = {r["skill_code"]: r["n"] for r in skill_rows}
-        units.append(UnitState(
-            row["unit_id"], row["unit_type"], attrs, equipment, skills,
-            row["priority"], bool(row["available"]), bool(row["recommendable"]),
-            row["station"], row["beat"],
-        ))
+def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
+    units: list[ScenarioUnit] = []
+    for _, r in frame.iterrows():
+        units.append(
+            ScenarioUnit(
+                unit_id=str(r["Unit ID"]),
+                unit_type=str(r["Unit Type"]),
+                beat=str(r.get("Beat", "")),
+                station_id=str(r.get("Station", "")),
+                attributes=attributes_from_text(str(r.get("Attributes", ""))),
+                equipment=equipment_from_text(str(r.get("Equipment", ""))),
+                m_skill_count=int(r.get("M Skills", 0) or 0),
+                test_distance=float(r.get("Test Distance", 999) or 999),
+            )
+        )
     return units
 
 
-def unit_qualifies(unit: UnitState, req: Requirement) -> tuple[bool, list[str]]:
-    if req.definition_status != "DEFINED":
-        return False, [f"{req.name} definition unresolved"]
-    if not unit.available:
-        return False, ["unit unavailable"]
-    if not unit.recommendable:
-        return False, ["unit not recommendable"]
+def qualifies(unit: ScenarioUnit, req: Requirement) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
 
-    reasons = []
+    if req.unit_id:
+        if unit.unit_id != req.unit_id:
+            return False, [f"Unit ID {unit.unit_id} != {req.unit_id}"]
+        reasons.append(f"Unit ID {unit.unit_id}")
+
     if req.unit_type:
         if unit.unit_type != req.unit_type:
             return False, [f"Unit Type {unit.unit_type} != {req.unit_type}"]
@@ -106,162 +72,161 @@ def unit_qualifies(unit: UnitState, req: Requirement) -> tuple[bool, list[str]]:
         matches = [a for a in req.attributes if a in unit.attributes]
         if req.attribute_mode.upper() == "ANY":
             if not matches:
-                return False, [f"no matching attribute from {', '.join(req.attributes)}"]
+                return False, [f"no required attribute present: {', '.join(req.attributes)}"]
             reasons.append(f"attribute {', '.join(matches)}")
         else:
             missing = [a for a in req.attributes if a not in unit.attributes]
             if missing:
-                return False, [f"missing attributes {', '.join(missing)}"]
+                return False, [f"missing attributes: {', '.join(missing)}"]
             reasons.append(f"attributes {', '.join(req.attributes)}")
 
     if req.equipment:
         missing = [e for e in req.equipment if unit.equipment.get(e, 0) < 1]
         if missing:
-            return False, [f"missing equipment {', '.join(missing)}"]
+            return False, [f"missing equipment: {', '.join(missing)}"]
         reasons.append(f"equipment {', '.join(req.equipment)}")
 
     return True, reasons
 
 
-def selected_satisfies_requirement(req: Requirement, selected_units: list[UnitState]) -> tuple[bool, str]:
-    if req.definition_status != "DEFINED":
-        return False, f"{req.name} definition unresolved"
-
+def selected_satisfies(req: Requirement, selected: list[ScenarioUnit]) -> tuple[bool, str]:
+    # Personnel-skill requirements can be supplied across already recommended units.
     if req.skills:
-        total = 0
-        contributions = []
-        for skill in req.skills:
-            for unit in selected_units:
-                count = unit.skills.get(skill, 0)
-                total += count
-                if count:
-                    contributions.append(f"{unit.unit_id}={count} {skill}")
-        return total >= req.quantity, (
-            f"required={req.quantity}; available={total}; "
-            + ("; ".join(contributions) if contributions else "no contributions")
-        )
+        if tuple(req.skills) == ("M",):
+            contributions = [(u.unit_id, u.m_skill_count) for u in selected if u.m_skill_count]
+            total = sum(n for _, n in contributions)
+            detail = "; ".join(f"{uid}={n} M" for uid, n in contributions) or "no M-skill contributions"
+            return total >= req.quantity, f"required={req.quantity}; available={total}; {detail}"
+        return False, "v0.4 currently models personnel skill M only"
 
     matching = []
-    for unit in selected_units:
-        ok, _ = unit_qualifies(unit, req)
+    for u in selected:
+        ok, _ = qualifies(u, req)
         if ok:
-            matching.append(unit.unit_id)
+            matching.append(u.unit_id)
     return len(matching) >= req.quantity, (
-        f"required={req.quantity}; matching selected units="
-        + (", ".join(matching) if matching else "none")
+        f"required={req.quantity}; matching recommended units=" + (", ".join(matching) if matching else "none")
     )
 
 
-def choose_unit_for_requirement(req: Requirement, units: list[UnitState], state: SimulationState):
+def choose_for_requirement(
+    req_name: str,
+    units: list[ScenarioUnit],
+    state: SimulationState,
+    *,
+    max_distance: float | None = None,
+) -> tuple[ScenarioUnit | None, list[str]]:
+    req = REQUIREMENTS[req_name]
     candidates = []
-    for unit in units:
-        if unit.unit_id in state.consumed_units:
+    for u in units:
+        if u.unit_id in state.consumed_units:
             continue
-        ok, reasons = unit_qualifies(unit, req)
+        if max_distance is not None and u.test_distance > max_distance:
+            continue
+        ok, reasons = qualifies(u, req)
         if ok:
-            candidates.append((unit.priority, unit.unit_id, unit, reasons))
+            candidates.append((u.test_distance, u.unit_id, u, reasons))
     if not candidates:
-        return None, ["no eligible unconsumed unit found"]
+        return None, []
     candidates.sort(key=lambda x: (x[0], x[1]))
-    return candidates[0][2], candidates[0][3]
+    _, _, unit, reasons = candidates[0]
+    return unit, reasons
 
 
-def choose_unit_for_group(conn, plan_name, step_no, units, state):
-    members = conn.execute(
-        """SELECT member_order, requirement_name FROM plan_group_members
-           WHERE plan_name=? AND step_no=? ORDER BY member_order""",
-        (plan_name, step_no),
-    ).fetchall()
-
+def choose_for_group(
+    alternatives: Iterable[str],
+    units: list[ScenarioUnit],
+    state: SimulationState,
+) -> tuple[str | None, ScenarioUnit | None, list[str]]:
     candidates = []
-    unresolved = []
-    for member in members:
-        req = load_requirement(conn, member["requirement_name"])
-        if req.definition_status != "DEFINED":
-            unresolved.append(req.name)
-            continue
-        for unit in units:
-            if unit.unit_id in state.consumed_units:
+    for alt_order, req_name in enumerate(alternatives):
+        req = REQUIREMENTS[req_name]
+        for u in units:
+            if u.unit_id in state.consumed_units:
                 continue
-            ok, reasons = unit_qualifies(unit, req)
+            ok, reasons = qualifies(u, req)
             if ok:
-                # Temporary stand-in: unit priority approximates proximity/routing.
-                # Group order is only a tie-breaker here.
-                candidates.append(
-                    (unit.priority, member["member_order"], unit.unit_id, req, unit, reasons)
-                )
-
+                # CAD routing/proximity is not available in v0.4. The user-editable
+                # Test Distance is the stand-in; requirement order breaks equal-distance ties.
+                candidates.append((u.test_distance, alt_order, u.unit_id, req_name, u, reasons))
     if not candidates:
-        return None, None, None, unresolved
+        return None, None, []
     candidates.sort(key=lambda x: (x[0], x[1], x[2]))
-    _, _, _, req, unit, reasons = candidates[0]
-    return req, unit, reasons, unresolved
+    _, _, _, req_name, unit, reasons = candidates[0]
+    return req_name, unit, reasons
 
 
-def simulate_plan(conn: sqlite3.Connection, plan_name: str) -> SimulationState:
+def simulate_alpha(units: list[ScenarioUnit]) -> SimulationState:
     state = SimulationState()
-    units = load_units(conn)
-    unit_map = {u.unit_id: u for u in units}
-    steps = {r["step_no"]: r for r in conn.execute(
-        "SELECT * FROM plan_steps WHERE plan_name=?", (plan_name,)
-    )}
-    if not steps:
-        raise KeyError(f"Unknown plan: {plan_name}")
-
-    current = min(steps)
+    unit_by_id = {u.unit_id: u for u in units}
+    current = 1
     guard = 0
+
     while current is not None:
         guard += 1
         if guard > 100:
-            raise RuntimeError("Plan exceeded 100 steps; possible loop")
-        step = steps[current]
-        state.trace.append(f"STEP {current}: {step['label']}")
+            raise RuntimeError("ALPHA exceeded 100 steps; possible flow loop")
+        step = ALPHA_STEPS[current]
+        state.trace.append(f"STEP {step.number}: {step.label}")
 
-        if step["step_kind"] == "STOP":
+        if step.kind == "STOP":
             state.trace.append("Plan complete.")
             break
 
-        if step["step_kind"] == "REQUIREMENT":
-            req = load_requirement(conn, step["requirement_name"])
-            selected, reasons = choose_unit_for_requirement(req, units, state)
-            if selected:
-                state.assignments.append(Assignment(req.name, selected.unit_id, current))
-                state.trace.append(f"{req.name}: selected {selected.unit_id} — {'; '.join(reasons)}")
-                if selected.skills.get("M", 0):
-                    state.trace.append(f"{selected.unit_id} contributes {selected.skills['M']} personnel skill M")
-            else:
-                state.trace.append(f"{req.name}: FAILED — {'; '.join(reasons)}")
-            current = step["on_yes_step"]
-            continue
-
-        if step["step_kind"] == "GROUP":
-            req, selected, reasons, unresolved = choose_unit_for_group(
-                conn, plan_name, current, units, state
+        if step.kind == "REQUIREMENT":
+            unit, reasons = choose_for_requirement(
+                step.requirement, units, state, max_distance=step.max_distance
             )
-            if unresolved:
+            if unit:
+                state.assignments.append(Assignment(step.number, step.requirement, unit.unit_id))
+                max_note = f" within max distance {step.max_distance:g}" if step.max_distance is not None else ""
                 state.trace.append(
-                    "Unresolved alternatives retained but not evaluated: " + ", ".join(unresolved)
+                    f"{step.requirement}: selected {unit.unit_id}{max_note} — " + "; ".join(reasons)
                 )
-            if selected:
-                state.assignments.append(Assignment(req.name, selected.unit_id, current))
-                state.trace.append(
-                    f"GROUP selected {selected.unit_id} via {req.name} — {'; '.join(reasons)}"
-                )
-                if selected.skills.get("M", 0):
-                    state.trace.append(f"{selected.unit_id} contributes {selected.skills['M']} personnel skill M")
+                current = step.yes_step if step.yes_step is not None else step.next_step
             else:
-                state.trace.append("GROUP FAILED — no eligible unconsumed unit from loaded definitions")
-            current = step["on_yes_step"]
+                state.trace.append(
+                    f"{step.requirement}: no eligible unconsumed unit"
+                    + (f" within max distance {step.max_distance:g}" if step.max_distance is not None else "")
+                )
+                current = step.no_step if step.no_step is not None else step.next_step
             continue
 
-        if step["step_kind"] == "CONDITION":
-            req = load_requirement(conn, step["condition_requirement"])
-            selected_units = [unit_map[a.unit_id] for a in state.assignments]
-            result, detail = selected_satisfies_requirement(req, selected_units)
+        if step.kind == "GROUP":
+            req_name, unit, reasons = choose_for_group(step.alternatives, units, state)
+            if unit:
+                state.assignments.append(Assignment(step.number, req_name, unit.unit_id))
+                state.trace.append(
+                    f"GROUP selected {unit.unit_id} via {req_name} — " + "; ".join(reasons)
+                )
+                if unit.m_skill_count:
+                    state.trace.append(f"{unit.unit_id} contributes {unit.m_skill_count} personnel skill M")
+                if step.display_order is not None:
+                    state.trace.append(f"Display Order={step.display_order} (display only; not used for qualification)")
+            else:
+                state.trace.append("GROUP FAILED — no eligible unconsumed unit")
+            current = step.next_step
+            continue
+
+        if step.kind == "CONDITION":
+            req = REQUIREMENTS[step.requirement]
+            selected = [unit_by_id[a.unit_id] for a in state.assignments]
+            result, detail = selected_satisfies(req, selected)
             state.trace.append(f"CONDITION {req.name}: {'YES' if result else 'NO'} — {detail}")
-            current = step["on_yes_step"] if result else step["on_no_step"]
+            current = step.yes_step if result else step.no_step
             continue
 
-        raise ValueError(f"Unsupported step kind: {step['step_kind']}")
+        raise ValueError(f"Unsupported step kind: {step.kind}")
 
     return state
+
+
+def pair_conflicts(frame: pd.DataFrame) -> list[tuple[str, str]]:
+    selected = set(frame["Unit ID"].astype(str))
+    pairs = []
+    for _, row in frame.iterrows():
+        pair = str(row.get("Pair Unit", ""))
+        uid = str(row["Unit ID"])
+        if pair and pair in selected and uid < pair:
+            pairs.append((uid, pair))
+    return pairs
