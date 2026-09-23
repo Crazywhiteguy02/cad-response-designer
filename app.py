@@ -8,8 +8,8 @@ from requirements import REQUIREMENTS
 from alpha_plan import ALPHA_STEPS
 from engine import scenario_units_from_frame, simulate_alpha, pair_conflicts
 
-st.set_page_config(page_title="CAD Response Designer v0.4.2", layout="wide")
-st.title("CAD Response Designer — Prototype v0.4.2")
+st.set_page_config(page_title="CAD Response Designer v0.4.3", layout="wide")
+st.title("CAD Response Designer — Prototype v0.4.3")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
@@ -20,12 +20,10 @@ catalog = load_catalog()
 # Known equipment codes gathered from the supplied CADDBM screenshots/data.
 # The editor also accepts new values so this list does not limit future testing.
 EQUIPMENT_OPTIONS = [
-    "40mm",
     "4X4",
     "4X4PASS",
     "AFR1",
     "AFR2",
-    "AIUEQ",
     "BLOOD",
     "CAFS",
     "CHAIN SAW",
@@ -55,7 +53,7 @@ scenario_tab, catalog_tab, req_tab = st.tabs(
 
 
 def _equipment_list_from_saved(saved: dict) -> list[str]:
-    """Normalize equipment from v0.4/v0.4.1 or v0.4.2 session data."""
+    """Normalize equipment from v0.4/v0.4.1 or v0.4.3 session data."""
     value = saved.get("Equipment")
     if isinstance(value, (list, tuple, set)):
         return [str(x).strip() for x in value if str(x).strip()]
@@ -133,11 +131,10 @@ with scenario_tab:
                     ),
                     width="large",
                 ),
-                "M Skills": st.column_config.NumberColumn(
+                "M Skills": st.column_config.SelectboxColumn(
                     "M Skills",
-                    min_value=0,
-                    step=1,
-                    help="Number of rostered personnel with personnel skill M."
+                    options=[0, 1, 2, 3, 4],
+                    help="Number of rostered personnel with personnel skill M. Typical test range is 0-4."
                 ),
                 "Test Distance": st.column_config.NumberColumn(
                     "Test Distance",
@@ -219,7 +216,7 @@ with scenario_tab:
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.4.2"):
+    with st.expander("Current ALPHA flow modeled in v0.4.3"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
