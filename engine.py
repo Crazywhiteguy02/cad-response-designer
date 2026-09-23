@@ -40,6 +40,21 @@ class SimulationState:
 def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
     units: list[ScenarioUnit] = []
     for _, r in frame.iterrows():
+        # v0.4.1 exposes AFR1/AFR2 as an explicit dropdown while preserving
+        # a free-text field for all other equipment. Older frames containing
+        # only an Equipment column remain supported.
+        if "AFR Equipment" in frame.columns or "Other Equipment" in frame.columns:
+            equipment_parts = []
+            afr = str(r.get("AFR Equipment", "") or "").strip()
+            other = str(r.get("Other Equipment", "") or "").strip()
+            if afr:
+                equipment_parts.append(afr)
+            if other:
+                equipment_parts.append(other)
+            equipment_text = ", ".join(equipment_parts)
+        else:
+            equipment_text = str(r.get("Equipment", ""))
+
         units.append(
             ScenarioUnit(
                 unit_id=str(r["Unit ID"]),
@@ -47,7 +62,7 @@ def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
                 beat=str(r.get("Beat", "")),
                 station_id=str(r.get("Station", "")),
                 attributes=attributes_from_text(str(r.get("Attributes", ""))),
-                equipment=equipment_from_text(str(r.get("Equipment", ""))),
+                equipment=equipment_from_text(equipment_text),
                 m_skill_count=int(r.get("M Skills", 0) or 0),
                 test_distance=float(r.get("Test Distance", 999) or 999),
             )
