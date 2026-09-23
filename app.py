@@ -8,14 +8,21 @@ from requirements import REQUIREMENTS
 from alpha_plan import ALPHA_STEPS
 from engine import scenario_units_from_frame, simulate_alpha, pair_conflicts
 
-st.set_page_config(page_title="CAD Response Designer v0.4.3", layout="wide")
-st.title("CAD Response Designer — Prototype v0.4.3")
+st.set_page_config(page_title="CAD Response Designer v0.4.4", layout="wide")
+st.title("CAD Response Designer — Prototype v0.4.4")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
 )
 
 catalog = load_catalog()
+
+BEAT_OPTIONS = sorted(
+    {str(x).strip() for x in catalog["beat"].tolist() if str(x).strip()}
+)
+STATION_OPTIONS = sorted(
+    {str(x).strip() for x in catalog["station_id"].tolist() if str(x).strip()}
+)
 
 # Known equipment codes gathered from the supplied CADDBM screenshots/data.
 # The editor also accepts new values so this list does not limit future testing.
@@ -38,6 +45,38 @@ EQUIPMENT_OPTIONS = [
     "WINCH",
 ]
 
+ATTRIBUTE_OPTIONS = [
+    "FOAM",
+    "RESCUE",
+    "HAZMAT",
+    "ENGINE",
+    "TROT",
+    "CITY",
+    "COUNTY",
+    "OJ",
+    "AR-AFFF",
+    "AFFF",
+    "ARFF",
+    "FOAM-INDUSTRIAL",
+    "TRANSPORT",
+    "FDU",
+    "ALS FIRST RESP",
+    "BLOODHOUND",
+    "TRUCK",
+    "MEDIC",
+    "AMBULANCE",
+    "HEAVY",
+    "FIRE UNITS",
+    "AUTO ARRIVE",
+    "AVL EQUIPPED",
+    "AR-FOAM",
+    "FOAM SUPPORT",
+    "BALLISTIC",
+    "COMMAND BC",
+    "EXTRICATION",
+    "CHASE CAR",
+]
+
 default_units = [
     "M421", "A421", "E426", "E435", "TT425M", "ALS401",
     "EMS401", "HM401M", "BC401", "BC443"
@@ -53,7 +92,7 @@ scenario_tab, catalog_tab, req_tab = st.tabs(
 
 
 def _equipment_list_from_saved(saved: dict) -> list[str]:
-    """Normalize equipment from v0.4/v0.4.1 or v0.4.3 session data."""
+    """Normalize equipment from v0.4/v0.4.1 or v0.4.4 session data."""
     value = saved.get("Equipment")
     if isinstance(value, (list, tuple, set)):
         return [str(x).strip() for x in value if str(x).strip()]
@@ -69,6 +108,20 @@ def _equipment_list_from_saved(saved: dict) -> list[str]:
     if other:
         parts.extend(x.strip() for x in other.replace(";", ",").split(",") if x.strip())
     return list(dict.fromkeys(parts))
+
+
+def _attribute_list_from_value(value) -> list[str]:
+    """Normalize attributes from stored lists or legacy delimited text."""
+    if isinstance(value, (list, tuple, set)):
+        return [str(x).strip() for x in value if str(x).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    # Previous versions stored attributes as semicolon-separated text.
+    delimiter = ";" if ";" in text else ","
+    return [x.strip() for x in text.split(delimiter) if x.strip()]
 
 
 with scenario_tab:
@@ -96,8 +149,10 @@ with scenario_tab:
             "Unit ID": uid,
             "Unit Type": r["unit_type"],
             "Beat": saved.get("Beat", r["beat"]),
-            "Station": r["station_id"],
-            "Attributes": saved.get("Attributes", r["default_attributes"]),
+            "Station": saved.get("Station", r["station_id"]),
+            "Attributes": _attribute_list_from_value(
+                saved.get("Attributes", r["default_attributes"])
+            ),
             "Equipment": _equipment_list_from_saved(saved),
             "M Skills": saved.get("M Skills", int(r["default_m_skill"])),
             "Test Distance": saved.get("Test Distance", 5.0),
@@ -108,9 +163,8 @@ with scenario_tab:
 
     if not scenario_df.empty:
         st.caption(
-            "Equipment is now one multi-select field. Choose any combination of equipment codes "
-            "for a unit, such as AFR1 + VENT. You can also type a new equipment code if it is not "
-            "already in the dropdown."
+            "Unit ID and Unit Type are locked. Beat and Station are single-select dropdowns. "
+            "Attributes and Equipment are multi-select fields so multiple values can be assigned."
         )
 
         edited = st.data_editor(
@@ -118,9 +172,26 @@ with scenario_tab:
             hide_index=True,
             use_container_width=True,
             disabled=[
-                "Unit ID", "Unit Type", "Station", "Typical ALS Equipment"
+                "Unit ID", "Unit Type", "Typical ALS Equipment"
             ],
             column_config={
+                "Beat": st.column_config.SelectboxColumn(
+                    "Beat",
+                    options=BEAT_OPTIONS,
+                    help="Select one current beat for the unit."
+                ),
+                "Station": st.column_config.SelectboxColumn(
+                    "Station",
+                    options=STATION_OPTIONS,
+                    help="Select one current station for the unit."
+                ),
+                "Attributes": st.column_config.MultiselectColumn(
+                    "Attributes",
+                    options=ATTRIBUTE_OPTIONS,
+                    accept_new_options=True,
+                    help="Select one or more unit attributes. New attribute codes may also be entered for testing.",
+                    width="large",
+                ),
                 "Equipment": st.column_config.MultiselectColumn(
                     "Equipment",
                     options=EQUIPMENT_OPTIONS,
@@ -154,9 +225,14 @@ with scenario_tab:
             equipment = row.get("Equipment", [])
             if not isinstance(equipment, list):
                 equipment = [] if pd.isna(equipment) else [str(equipment)]
+            attributes = row.get("Attributes", [])
+            if not isinstance(attributes, list):
+                attributes = [] if pd.isna(attributes) else [str(attributes)]
+
             st.session_state.scenario_overrides[str(row["Unit ID"])] = {
                 "Beat": str(row["Beat"]),
-                "Attributes": str(row["Attributes"]),
+                "Station": str(row["Station"]),
+                "Attributes": attributes,
                 "Equipment": equipment,
                 "M Skills": int(row["M Skills"]),
                 "Test Distance": float(row["Test Distance"]),
@@ -216,7 +292,7 @@ with scenario_tab:
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.4.3"):
+    with st.expander("Current ALPHA flow modeled in v0.4.4"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":

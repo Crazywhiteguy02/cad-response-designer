@@ -66,7 +66,11 @@ def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
                 unit_type=str(r["Unit Type"]),
                 beat=str(r.get("Beat", "")),
                 station_id=str(r.get("Station", "")),
-                attributes=attributes_from_text(str(r.get("Attributes", ""))),
+                attributes=(
+                    set(str(x).strip() for x in r.get("Attributes", []) if str(x).strip())
+                    if isinstance(r.get("Attributes", []), (list, tuple, set))
+                    else attributes_from_text(str(r.get("Attributes", "")))
+                ),
                 equipment=equipment_from_text(equipment_text),
                 m_skill_count=int(r.get("M Skills", 0) or 0),
                 test_distance=float(r.get("Test Distance", 999) or 999),

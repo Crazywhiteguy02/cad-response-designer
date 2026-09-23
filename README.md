@@ -1,4 +1,4 @@
-# CAD Response Designer — Prototype v0.4.3.2
+# CAD Response Designer — Prototype v0.4.4.2
 
 This version moves the prototype to the current **ALPHA** response plan and imports the complete unit catalog supplied from CADDBM.
 
@@ -17,7 +17,7 @@ This version moves the prototype to the current **ALPHA** response plan and impo
 
 ## Important modeling boundary
 
-The unit-definition report supplies Unit ID, Unit Type, Agency, Dispatch Group, Beat, and Station ID. It does **not** include every unit's attributes, equipment, or current roster. v0.4.3.2 therefore only pre-populates attributes where the user explicitly supplied a family or exact-unit rule. Other catalog records remain `Unknown / not modeled` rather than being guessed.
+The unit-definition report supplies Unit ID, Unit Type, Agency, Dispatch Group, Beat, and Station ID. It does **not** include every unit's attributes, equipment, or current roster. v0.4.4.2 therefore only pre-populates attributes where the user explicitly supplied a family or exact-unit rule. Other catalog records remain `Unknown / not modeled` rather than being guessed.
 
 `AFR1` / `AFR2` equipment is intentionally not auto-assigned to every M-suffix resource because the user stated those units typically use either AFR1 or AFR2, but the exact equipment assignment varies. Enter the actual equipment in the Scenario editor for the test being run.
 
@@ -27,7 +27,7 @@ Replace the files in the existing GitHub repository with this package. Streamlit
 
 `app.py`
 
-## v0.4.3.2 ALPHA flow
+## v0.4.4.2 ALPHA flow
 
 1. `M`, Max Distance 10.
 2. If that fails: `M OR ALS CHASE CAR OR EMS`.
@@ -44,7 +44,7 @@ Hatched/blank branches in the supplied ALPHA flowchart are represented as pass-t
 
 The prototype does not have I/CAD street-network travel calculations. `Test Distance` is an explicit simulation input used to rank candidates and to test the Max Distance 10 rule. This is not presented as actual CAD travel distance.
 
-## v0.4.3.2 equipment-entry fix
+## v0.4.4.2 equipment-entry fix
 
 - Adds a dedicated AFR Equipment dropdown in the operational scenario.
 - AFR Equipment choices are blank, AFR1, or AFR2.
@@ -52,7 +52,7 @@ The prototype does not have I/CAD street-network travel calculations. `Test Dist
 - Warns when an M-suffix unit that normally carries AFR1/AFR2 has no AFR equipment assigned.
 - The recommendation engine now combines AFR Equipment and Other Equipment when evaluating requirements.
 
-## v0.4.3 scenario editor update
+## v0.4.4 scenario editor update
 
 - Combines AFR Equipment and Other Equipment into one Equipment field.
 - Equipment is an editable multi-select dropdown.
@@ -61,8 +61,16 @@ The prototype does not have I/CAD street-network travel calculations. `Test Dist
 - Removes the visible Pair Unit column from both the scenario editor and unit catalog.
 - Base/M-pair conflict warnings still work by deriving the pair from the Unit ID suffix.
 
-## v0.4.3 scenario editor refinements
+## v0.4.4 scenario editor refinements
 
 - Changes M Skills from a free-number field to a dropdown with values 0 through 4.
 - Removes `40mm` and `AIUEQ` from the Equipment dropdown because they are not used by the fire department.
 - Retains the multi-select Equipment field and all v0.4.2 ALPHA logic.
+
+## v0.4.4 scenario editor controls
+
+- Unit ID and Unit Type remain locked/read-only.
+- Beat is now a single-select dropdown populated from the CADDBM unit catalog.
+- Station is now a single-select dropdown populated from the CADDBM unit catalog.
+- Attributes are now an editable multi-select dropdown and support multiple attributes.
+- Attribute selections and station changes are retained for the active Streamlit session.
