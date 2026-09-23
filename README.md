@@ -1,4 +1,4 @@
-# CAD Response Designer — Prototype v0.2
+# CAD Response Designer — Prototype v0.2.1
 
 v0.2 adds OR requirement-group support and corrects the AFR/ALS fallback logic.
 
@@ -14,3 +14,8 @@ The historical `AFR_ALS` flow now includes:
 AFR3, AFR4, HM440M, HM440, and generic A remain explicitly unresolved until their exact requirement definitions are supplied.
 
 For Streamlit Community Cloud, replace the prior project files in GitHub with the v0.2 files. Streamlit should redeploy automatically.
+
+
+## v0.2.1 UI fix
+
+Restores the detailed resource-state table from v0.1 while retaining all v0.2 simulation logic.

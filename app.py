@@ -5,11 +5,11 @@ import streamlit as st
 from db import connect, init_db
 from engine import load_units, simulate_plan
 
-st.set_page_config(page_title="CAD Response Designer v0.2", layout="wide")
+st.set_page_config(page_title="CAD Response Designer v0.2.1", layout="wide")
 init_db()
 conn = connect()
 
-st.title("CAD Response Designer — Prototype v0.2")
+st.title("CAD Response Designer — Prototype v0.2.1")
 st.caption(
     "AFR/ALS requirement-group validation with exclusive resource slots and roster-derived M skills."
 )
@@ -21,35 +21,68 @@ with st.sidebar:
         init_db(reset=True)
         st.rerun()
 
-st.subheader("Unit availability")
+# Restore the detailed resource table from v0.1.
+st.subheader("Representative resource state")
 units = load_units(conn)
+
+resource_rows = []
+for unit in sorted(units, key=lambda x: (x.priority, x.unit_id)):
+    resource_rows.append(
+        {
+            "Unit ID": unit.unit_id,
+            "Unit Type": unit.unit_type,
+            "Attributes": ", ".join(sorted(unit.attributes)),
+            "Equipment": ", ".join(
+                f"{code} x{qty}" for code, qty in sorted(unit.equipment.items())
+            ),
+            "M-skilled personnel": unit.skills.get("M", 0),
+            "Station": unit.station or "",
+            "Beat": unit.beat or "",
+            "Available": unit.available,
+        }
+    )
+
+st.dataframe(resource_rows, use_container_width=True, hide_index=True)
+
+st.subheader("Unit availability")
 cols = st.columns(3)
 for idx, unit in enumerate(sorted(units, key=lambda x: x.unit_id)):
     with cols[idx % 3]:
-        checked = st.checkbox(unit.unit_id, value=unit.available, key=f"avail_{unit.unit_id}")
+        checked = st.checkbox(
+            unit.unit_id,
+            value=unit.available,
+            key=f"avail_{unit.unit_id}",
+        )
         if checked != unit.available:
             conn.execute(
-                "UPDATE units SET available=? WHERE unit_id=?", (int(checked), unit.unit_id)
+                "UPDATE units SET available=? WHERE unit_id=?",
+                (int(checked), unit.unit_id),
             )
             conn.commit()
 
 st.subheader("Simulation")
 st.write(
-    "The historical AFR_ALS flow is now represented with OR requirement groups. "
+    "The historical AFR_ALS flow is represented with OR requirement groups. "
     "Actual routing/proximity is not implemented yet; sample Priority is a deterministic stand-in."
 )
 
 if st.button("Simulate", type="primary"):
     state = simulate_plan(conn, "AFR_ALS_2022")
+
     st.markdown("#### Recommended resources")
     st.dataframe(
         [
-            {"Step": a.source_step, "Requirement": a.requirement, "Unit": a.unit_id}
+            {
+                "Step": a.source_step,
+                "Requirement": a.requirement,
+                "Unit": a.unit_id,
+            }
             for a in state.assignments
         ],
         use_container_width=True,
         hide_index=True,
     )
+
     st.markdown("#### Explanation trace")
     st.code("\n".join(state.trace), language="text")
 
