@@ -103,7 +103,7 @@ def init_db(db_path: Path | str = DB_PATH, reset: bool = False) -> None:
     if cur.execute("SELECT COUNT(*) FROM units").fetchone()[0] == 0:
         seed_base(conn)
 
-    ensure_v02_data(conn)
+    ensure_v03_data(conn)
     conn.close()
 
 
@@ -154,23 +154,28 @@ def _insert_requirement(conn, name, quantity=1, unit_type=None, attributes=(),
 def seed_base(conn):
     _insert_unit(conn, "E421M", "E", ["ENGINE", "ALS FIRST RESP", "HEAVY"],
                  [("AFR1", 1)], "421", "421", 10)
-    _insert_unit(conn, "E426", "E", ["ENGINE", "ALS FIRST RESP", "HEAVY"], [], "426", "426", 20)
-    _insert_unit(conn, "E435", "E", ["ENGINE", "ALS FIRST RESP", "HEAVY"], [], "435", "435", 30)
-    _insert_unit(conn, "RE433M", "E", ["RESCUE", "ENGINE", "HEAVY", "BALLISTIC", "EXTRICATION"],
+    _insert_unit(conn, "E426", "E", ["ENGINE", "HEAVY"], [], "426", "426", 20)
+    _insert_unit(conn, "E435", "E", ["ENGINE", "HEAVY"], [], "435", "435", 30)
+    _insert_unit(conn, "RE433M", "E", ["RESCUE", "ENGINE", "HEAVY", "BALLISTIC", "EXTRICATION", "ALS FIRST RESP"],
                  [("AFR2", 1)], "433", "433", 15)
-    _insert_unit(conn, "R421M", "R", ["RESCUE", "HAZMAT", "TROT", "HEAVY", "BALLISTIC", "EXTRICATION"],
+    _insert_unit(conn, "R421M", "R", ["RESCUE", "HAZMAT", "TROT", "HEAVY", "BALLISTIC", "EXTRICATION", "ALS FIRST RESP"],
                  [("AFR1", 1)], "421", "421", 12)
-    _insert_unit(conn, "T421M", "T", ["TRUCK", "HEAVY", "BALLISTIC", "EXTRICATION"],
+    _insert_unit(conn, "T421M", "T", ["TRUCK", "HEAVY", "BALLISTIC", "EXTRICATION", "ALS FIRST RESP"],
                  [("AFR2", 1)], "421", "421", 14)
-    _insert_unit(conn, "TL440M", "TL", ["TRUCK", "HEAVY", "BALLISTIC", "EXTRICATION"],
+    _insert_unit(conn, "TL440M", "TL", ["TRUCK", "HEAVY", "BALLISTIC", "EXTRICATION", "ALS FIRST RESP"],
                  [("AFR1", 1)], "440", "440", 40)
-    _insert_unit(conn, "TT425M", "TT", ["TRUCK", "HEAVY", "BALLISTIC", "EXTRICATION"],
+    _insert_unit(conn, "TT425M", "TT", ["TRUCK", "HEAVY", "BALLISTIC", "EXTRICATION", "ALS FIRST RESP"],
                  [("AFR2", 1)], "425", "425", 35)
     _insert_unit(conn, "A421", "A", ["COUNTY", "TRANSPORT", "AMBULANCE"], [], "421", "421", 25)
     _insert_unit(conn, "M421", "M", ["TRANSPORT", "MEDIC"], [], "421", "421", 11)
     _insert_unit(conn, "EMS401", "EMS", ["COUNTY", "BALLISTIC", "CHASE CAR"], [], "442", "442", 50)
     _insert_unit(conn, "BC401", "BC", ["COUNTY", "BALLISTIC", "COMMAND BC"], [], "425", "404", 60)
     _insert_unit(conn, "BC443", "BC", ["CITY", "BALLISTIC", "COMMAND BC"], [], "403", "403", 61)
+    _insert_unit(conn, "HM401", "HM", ["RESCUE", "HAZMAT", "HEAVY", "EXTRICATION"], [], "440", "440", 70,
+                 notes="Current hazmat unit. Not explicitly substituted for historical HM440 response-plan references.")
+    _insert_unit(conn, "HM401M", "HM", ["ALS FIRST RESP", "RESCUE", "HAZMAT", "HEAVY", "EXTRICATION"], [], "440", "440", 71,
+                 notes="Current ALS hazmat unit. Personnel skill M staffing has not yet been supplied.")
+    conn.execute("UPDATE units SET available=0 WHERE unit_id IN ('HM401','HM401M')")
 
     for eid, unit in [
         ("TEST1001", "E421M"), ("TEST1003", "RE433M"), ("TEST1004", "R421M"),
@@ -182,7 +187,45 @@ def seed_base(conn):
     conn.commit()
 
 
-def ensure_v02_data(conn):
+def ensure_v03_data(conn):
+    # v0.3 resource-state corrections. For operational E/T/TL/TT/R resources,
+    # ALS FIRST RESP follows the M-suffix version rather than the base unit.
+    operational_types = ("E", "T", "TL", "TT", "R")
+    for row in conn.execute(
+        "SELECT unit_id, unit_type FROM units WHERE unit_type IN ('E','T','TL','TT','R')"
+    ).fetchall():
+        unit_id = row["unit_id"]
+        if unit_id.endswith("M"):
+            conn.execute(
+                "INSERT OR IGNORE INTO unit_attributes(unit_id, attribute) VALUES (?, 'ALS FIRST RESP')",
+                (unit_id,),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM unit_attributes WHERE unit_id=? AND attribute='ALS FIRST RESP'",
+                (unit_id,),
+            )
+
+    # Current hazmat resources. Keep them separate from historical HM440/HM440M
+    # response-plan references until current plans are loaded.
+    for unit_id, attrs, available, priority in [
+        ("HM401", ["RESCUE", "HAZMAT", "HEAVY", "EXTRICATION"], 0, 70),
+        ("HM401M", ["ALS FIRST RESP", "RESCUE", "HAZMAT", "HEAVY", "EXTRICATION"], 0, 71),
+    ]:
+        conn.execute(
+            """INSERT OR IGNORE INTO units
+               (unit_id, unit_type, agency, station, beat, recommendable, available, priority, notes)
+               VALUES (?, 'HM', 'FIRE', '440', '440', 1, ?, ?, ?)""",
+            (unit_id, available, priority,
+             "Current hazmat resource; not automatically substituted for historical HM440/HM440M plan references."),
+        )
+        conn.execute("UPDATE units SET unit_type='HM', station='440', beat='440' WHERE unit_id=?", (unit_id,))
+        conn.execute("DELETE FROM unit_attributes WHERE unit_id=?", (unit_id,))
+        conn.executemany(
+            "INSERT INTO unit_attributes(unit_id, attribute) VALUES (?, ?)",
+            [(unit_id, attr) for attr in attrs],
+        )
+
     # Known requirement definitions.
     _insert_requirement(conn, "ALS_SKILL", 2, skills=["M"], allow_existing_units=True,
                         notes="Two personnel with skill M; any qualifying recommended units can contribute.")

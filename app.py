@@ -5,13 +5,13 @@ import streamlit as st
 from db import connect, init_db
 from engine import load_units, simulate_plan
 
-st.set_page_config(page_title="CAD Response Designer v0.2.1", layout="wide")
+st.set_page_config(page_title="CAD Response Designer v0.3", layout="wide")
 init_db()
 conn = connect()
 
-st.title("CAD Response Designer — Prototype v0.2.1")
+st.title("CAD Response Designer — Prototype v0.3")
 st.caption(
-    "AFR/ALS requirement-group validation with exclusive resource slots and roster-derived M skills."
+    "AFR/ALS validation with corrected M-suffix ALS FIRST RESP attributes and current HM401/HM401M resource profiles."
 )
 
 with st.sidebar:
@@ -43,6 +43,12 @@ for unit in sorted(units, key=lambda x: (x.priority, x.unit_id)):
     )
 
 st.dataframe(resource_rows, use_container_width=True, hide_index=True)
+
+st.caption(
+    "Resource model note: for engines, trucks, towers, tillers, and rescues, "
+    "ALS FIRST RESP is assigned to the M-suffix unit. HM401/HM401M are included in the "
+    "resource catalog, but are not automatically substituted for historical HM440/HM440M plan references."
+)
 
 st.subheader("Unit availability")
 cols = st.columns(3)
