@@ -21,12 +21,13 @@ from routing import (
     parse_lat_lon,
     route_table,
     route_geometry,
+    filter_route_rows_for_map,
     format_duration,
     RoutingError,
 )
 
-st.set_page_config(page_title="CAD Response Designer v0.5.2", layout="wide")
-st.title("CAD Response Designer — Prototype v0.5.2")
+st.set_page_config(page_title="CAD Response Designer v0.5.3", layout="wide")
+st.title("CAD Response Designer — Prototype v0.5.3")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
@@ -315,6 +316,7 @@ def _routing_dataframe(edited: pd.DataFrame, incident_point):
                 "station": sid,
                 "station_name": rec.get("station_name", ""),
                 "jurisdiction": rec.get("jurisdiction", ""),
+                "unit_ids": units_here,
                 "units": ", ".join(units_here),
                 "label": f"Station {sid} | {', '.join(units_here)}",
                 "path": geometry["path"],
@@ -543,6 +545,34 @@ with scenario_tab:
         help="Search by typing a Unit ID. Only selected units participate in the simulation."
     )
 
+    map_scope = "Dispatched units only"
+    map_extra_units = []
+    if routing_mode == "OpenStreetMap / OSRM":
+        map_scope = st.radio(
+            "Map route visibility",
+            [
+                "Dispatched units only",
+                "Dispatched + selected in-service units",
+                "All in-service units",
+            ],
+            index=0,
+            help=(
+                "The map defaults to dispatched units only. Use the middle option to add "
+                "specific non-dispatched units for comparison. Show all routes only when "
+                "you deliberately want a full-system routing view."
+            ),
+        )
+        if map_scope == "Dispatched + selected in-service units":
+            map_extra_units = st.multiselect(
+                "Additional in-service units to show on the map",
+                options=selected_ids,
+                default=[],
+                help=(
+                    "These routes are shown in addition to the dispatched units. "
+                    "Units at the same station share one route line."
+                ),
+            )
+
     selected = catalog[catalog["unit_id"].isin(selected_ids)].copy().sort_values("unit_id")
 
     rows = []
@@ -718,23 +748,16 @@ with scenario_tab:
                         )
 
                     if route_df is not None and not route_df.empty:
-                        st.dataframe(
-                            route_df.drop(columns=["Travel Time (sec)", "Latitude", "Longitude"]),
-                            hide_index=True,
-                            use_container_width=True,
-                        )
-
-                        deck = _route_map(route_map_rows, incident_point)
-                        if deck is not None:
-                            st.markdown("#### Route map")
+                        with st.expander("Routing diagnostics — all in-service unit origins"):
                             st.caption(
-                                "Each colored line is the actual OSRM road route from a unit's current "
-                                "station to the incident. Units sharing a station share the same route. "
-                                "Circular markers identify stations; the star identifies the incident."
+                                "This table includes all routed in-service station origins. "
+                                "It is diagnostic only and does not control map visibility or dispatch order."
                             )
-                            st.pydeck_chart(deck, use_container_width=True, height=600)
-                        else:
-                            st.info("Route metrics were available, but no route geometry could be displayed.")
+                            st.dataframe(
+                                route_df.drop(columns=["Travel Time (sec)", "Latitude", "Longitude"]),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
 
                     units = scenario_units_from_frame(routed_frame)
                 except Exception as exc:
@@ -758,13 +781,52 @@ with scenario_tab:
                 else:
                     st.info("No resources were recommended from the current scenario.")
 
+                if routing_mode == "OpenStreetMap / OSRM" and route_map_rows:
+                    dispatched_ids = [
+                        a.unit_id for a in assignments_in_dispatch_order(state)
+                    ]
+                    show_all_routes = map_scope == "All in-service units"
+                    additional_ids = (
+                        map_extra_units
+                        if map_scope == "Dispatched + selected in-service units"
+                        else []
+                    )
+
+                    visible_route_rows = filter_route_rows_for_map(
+                        route_map_rows,
+                        dispatched_ids,
+                        show_all=show_all_routes,
+                        additional_unit_ids=additional_ids,
+                    )
+
+                    st.markdown("#### Route map")
+                    if map_scope == "Dispatched units only":
+                        st.caption(
+                            "Showing dispatched units only. Each station route is drawn once; "
+                            "if multiple dispatched units originate from the same station, they share that route."
+                        )
+                    elif map_scope == "Dispatched + selected in-service units":
+                        st.caption(
+                            "Showing dispatched units plus the additional in-service units you selected."
+                        )
+                    else:
+                        st.caption(
+                            "Showing all routed in-service units. This view can become dense in large scenarios."
+                        )
+
+                    deck = _route_map(visible_route_rows, incident_point)
+                    if deck is not None:
+                        st.pydeck_chart(deck, use_container_width=True, height=600)
+                    else:
+                        st.info("No route geometry is available for the current map filter.")
+
                 st.markdown("#### Explanation trace")
                 st.code("\n".join(state.trace), language="text")
 
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.5.2"):
+    with st.expander("Current ALPHA flow modeled in v0.5.3"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
@@ -780,8 +842,8 @@ with scenario_tab:
             st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
 
     st.info(
-        "OpenStreetMap / OSRM mode calculates and displays actual road-network routes and ranks "
-        "eligible candidates by estimated travel time. "
+        "OpenStreetMap / OSRM mode calculates actual road-network routes and ranks "
+        "eligible candidates by estimated travel time. The map defaults to dispatched units only. "
         "ALPHA's CAD Max Distance 10 setting is treated as a 10-minute travel-time threshold. "
         "Manual Test Time remains available as a diagnostic fallback. OSM/OSRM results are an independent routing "
         "model and are not expected to exactly reproduce Hexagon routing."

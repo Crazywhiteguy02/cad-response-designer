@@ -225,6 +225,52 @@ def route_geometry(
     response.raise_for_status()
     return _parse_route_geometry_response(response.json())
 
+
+def filter_route_rows_for_map(
+    route_rows: list[dict],
+    dispatched_unit_ids: list[str] | set[str] | tuple[str, ...],
+    *,
+    show_all: bool = False,
+    additional_unit_ids: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> list[dict]:
+    """Filter station-route rows for map display.
+
+    Default behavior shows only stations containing dispatched units.
+    Additional in-service units may be overlaid, or show_all may be used
+    deliberately for full-system troubleshooting.
+
+    If multiple in-service units share a station, the route is drawn once and
+    the label contains only the units currently visible under the filter.
+    """
+    dispatched = {str(x) for x in dispatched_unit_ids}
+    additional = {str(x) for x in (additional_unit_ids or [])}
+    visible = dispatched | additional
+
+    filtered: list[dict] = []
+    for original in route_rows:
+        row = dict(original)
+        unit_ids = row.get("unit_ids", [])
+
+        if isinstance(unit_ids, str):
+            unit_ids = [x.strip() for x in unit_ids.split(",") if x.strip()]
+        else:
+            unit_ids = [str(x) for x in unit_ids]
+
+        if show_all:
+            visible_here = unit_ids
+        else:
+            visible_here = [uid for uid in unit_ids if uid in visible]
+
+        if not visible_here:
+            continue
+
+        row["visible_unit_ids"] = visible_here
+        row["units"] = ", ".join(visible_here)
+        row["label"] = f"Station {row.get('station', '')} | {', '.join(visible_here)}"
+        filtered.append(row)
+
+    return filtered
+
 def format_duration(seconds: float | None) -> str:
     if seconds is None or (isinstance(seconds, float) and math.isnan(seconds)):
         return ""
