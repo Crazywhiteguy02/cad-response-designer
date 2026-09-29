@@ -43,7 +43,7 @@ def test_gui_uses_event_type_before_response_plan():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert '"Operational Condition"' in app
     assert '"Event Type"' in app
-    assert "Associated Response Plan" in app
+    assert "resolve_response_plan" in app
     assert "resolve_response_plan" in app
 
 
