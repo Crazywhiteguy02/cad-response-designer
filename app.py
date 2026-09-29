@@ -22,7 +22,6 @@ from engine import (
 )
 from routing import (
     load_station_crosswalk,
-    apply_station_active_overrides,
     station_record,
     geocode_address,
     parse_lat_lon,
@@ -33,7 +32,7 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CAD Response Designer v0.6.1",
+    page_title="CAD Response Designer v0.6.1.1",
     page_icon="🚒",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -249,7 +248,7 @@ st.markdown(
     """
     <div class="cad-hero">
       <div class="title">CAD Response Designer</div>
-      <div class="sub">Response-plan simulation, regional routing, and operational scenario testing · v0.6.1</div>
+      <div class="sub">Response-plan simulation, regional routing, and operational scenario testing · v0.6.1.1</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -378,10 +377,13 @@ def _attribute_list_from_value(value) -> list[str]:
 
 
 def _effective_stations() -> pd.DataFrame:
-    return apply_station_active_overrides(
-        stations,
-        st.session_state.get("station_active_overrides", {}),
-    )
+    """Apply session-scoped station availability without requiring a routing.py helper."""
+    effective = stations.copy()
+    overrides = st.session_state.get("station_active_overrides", {})
+    for sid, enabled in overrides.items():
+        mask = effective["cad_station_id"].astype(str) == str(sid)
+        effective.loc[mask, "active"] = bool(enabled)
+    return effective
 
 
 @st.cache_data(ttl=30 * 24 * 3600, show_spinner=False)

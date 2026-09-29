@@ -1,4 +1,4 @@
-# CAD Response Designer — Prototype v0.6.1.2
+# CAD Response Designer — Prototype v0.6.1.1.2
 
 This version moves the prototype to the current **ALPHA** response plan and imports the complete unit catalog supplied from CADDBM.
 
@@ -17,7 +17,7 @@ This version moves the prototype to the current **ALPHA** response plan and impo
 
 ## Important modeling boundary
 
-The unit-definition report supplies Unit ID, Unit Type, Agency, Dispatch Group, Beat, and Station ID. It does **not** include every unit's attributes, equipment, or current roster. v0.6.1.2 therefore only pre-populates attributes where the user explicitly supplied a family or exact-unit rule. Other catalog records remain `Unknown / not modeled` rather than being guessed.
+The unit-definition report supplies Unit ID, Unit Type, Agency, Dispatch Group, Beat, and Station ID. It does **not** include every unit's attributes, equipment, or current roster. v0.6.1.1.2 therefore only pre-populates attributes where the user explicitly supplied a family or exact-unit rule. Other catalog records remain `Unknown / not modeled` rather than being guessed.
 
 `AFR1` / `AFR2` equipment is intentionally not auto-assigned to every M-suffix resource because the user stated those units typically use either AFR1 or AFR2, but the exact equipment assignment varies. Enter the actual equipment in the Scenario editor for the test being run.
 
@@ -27,7 +27,7 @@ Replace the files in the existing GitHub repository with this package. Streamlit
 
 `app.py`
 
-## v0.6.1.2 ALPHA flow
+## v0.6.1.1.2 ALPHA flow
 
 1. `M`, Max Distance 10.
 2. If that fails: `M OR ALS CHASE CAR OR EMS`.
@@ -44,7 +44,7 @@ Hatched/blank branches in the supplied ALPHA flowchart are represented as pass-t
 
 The prototype does not have I/CAD street-network travel calculations. `Test Distance` is an explicit simulation input used to rank candidates and to test the Max Distance 10 rule. This is not presented as actual CAD travel distance.
 
-## v0.6.1.2 equipment-entry fix
+## v0.6.1.1.2 equipment-entry fix
 
 - Adds a dedicated AFR Equipment dropdown in the operational scenario.
 - AFR Equipment choices are blank, AFR1, or AFR2.
@@ -52,7 +52,7 @@ The prototype does not have I/CAD street-network travel calculations. `Test Dist
 - Warns when an M-suffix unit that normally carries AFR1/AFR2 has no AFR equipment assigned.
 - The recommendation engine now combines AFR Equipment and Other Equipment when evaluating requirements.
 
-## v0.6.1 scenario editor update
+## v0.6.1.1 scenario editor update
 
 - Combines AFR Equipment and Other Equipment into one Equipment field.
 - Equipment is an editable multi-select dropdown.
@@ -61,13 +61,13 @@ The prototype does not have I/CAD street-network travel calculations. `Test Dist
 - Removes the visible Pair Unit column from both the scenario editor and unit catalog.
 - Base/M-pair conflict warnings still work by deriving the pair from the Unit ID suffix.
 
-## v0.6.1 scenario editor refinements
+## v0.6.1.1 scenario editor refinements
 
 - Changes M Skills from a free-number field to a dropdown with values 0 through 4.
 - Removes `40mm` and `AIUEQ` from the Equipment dropdown because they are not used by the fire department.
 - Retains the multi-select Equipment field and all v0.4.2 ALPHA logic.
 
-## v0.6.1 scenario editor controls
+## v0.6.1.1 scenario editor controls
 
 - Unit ID and Unit Type remain locked/read-only.
 - Beat is now a single-select dropdown populated from the CADDBM unit catalog.
@@ -75,7 +75,7 @@ The prototype does not have I/CAD street-network travel calculations. `Test Dist
 - Attributes are now an editable multi-select dropdown and support multiple attributes.
 - Attribute selections and station changes are retained for the active Streamlit session.
 
-## v0.6.1 staffing and AFR defaults
+## v0.6.1.1 staffing and AFR defaults
 
 - Engine-family units with an `M` suffix default to `AFR1` and 1 personnel skill `M`.
 - Truck (`T`), Tower (`TL`), Tiller (`TT`), and Rescue (`R`) units with an `M` suffix default to `AFR2` and 1 personnel skill `M`.
@@ -85,14 +85,14 @@ The prototype does not have I/CAD street-network travel calculations. `Test Dist
 - `HM401M` retains 1 personnel skill `M`; its AFR1-vs-AFR2 default is not guessed because an exact assignment has not yet been supplied.
 - All defaults remain editable in the scenario editor.
 
-## v0.6.1 HM401M default correction
+## v0.6.1.1 HM401M default correction
 
 - `HM401M` now defaults to `AFR2`.
 - `HM401M` defaults to 1 personnel skill `M`.
 - This aligns the current HM401M resource with the supplied operational configuration.
 
 
-## v0.6.1 OpenStreetMap routing prototype
+## v0.6.1.1 OpenStreetMap routing prototype
 
 This version preserves the validated v0.4.6 ALPHA logic and adds a separate
 routing layer.
@@ -139,9 +139,9 @@ For a production deployment, use a self-hosted or contracted geocoding/routing
 service rather than relying on public community endpoints.
 
 
-## v0.6.1 CAD time-threshold and display-order correction
+## v0.6.1.1 CAD time-threshold and display-order correction
 
-Two CAD semantics were corrected from v0.6.1:
+Two CAD semantics were corrected from v0.6.1.1:
 
 1. ALPHA's configured `Max Distance 10` value is not a ten-mile cutoff. It is
    treated as a **10-minute travel-time threshold**. In OSM mode the simulator
@@ -156,7 +156,7 @@ The routing table is now labeled as diagnostic and is not presented as dispatch
 order.
 
 
-## v0.6.1 route map
+## v0.6.1.1 route map
 
 The OSM routing view now displays the actual OSRM road route from each unique
 station origin to the incident instead of only plotting origin/destination points.
@@ -175,7 +175,7 @@ OSRM route geometry is requested only for unique station origins and is cached
 for 15 minutes to reduce repeated public-routing requests.
 
 
-## v0.6.1 scalable route-map filtering
+## v0.6.1.1 scalable route-map filtering
 
 The route map now defaults to **dispatched units only** so large regional
 scenarios do not become unreadable as the unit catalog grows.
@@ -197,24 +197,24 @@ Additional behavior:
 - Recommendation display order remains controlled by the response plan, not ETA.
 
 
-## v0.6.1 Streamlit import hotfix
+## v0.6.1.1 Streamlit import hotfix
 
 The route-map filtering helper is now defined in `app.py` instead of being
 required as a new import from `routing.py`. This prevents an import-time crash
 if Streamlit Cloud temporarily serves a stale `routing.py` during a multi-file
-GitHub update. The v0.6.1 map filtering behavior is otherwise unchanged.
+GitHub update. The v0.6.1.1 map filtering behavior is otherwise unchanged.
 
 
-## v0.6.1 routing diagnostics cleanup
+## v0.6.1.1 routing diagnostics cleanup
 
 - Removes the `Route Color` column from the routing diagnostics table.
 - Route colors are still used internally on the map to distinguish route lines.
 - Station and unit labels remain the primary identification method.
 
 
-## v0.6.1 GUI / workflow redesign
+## v0.6.1.1 GUI / workflow redesign
 
-v0.6.1 is the first interface-focused release. The validated ALPHA simulation,
+v0.6.1.1 is the first interface-focused release. The validated ALPHA simulation,
 unit modeling, station crosswalk, routing, 10-minute threshold, response-plan
 dispatch order, and route-map filtering remain intact.
 
@@ -267,7 +267,7 @@ primary interface. ALPHA's CAD `Max Distance 10` continues to be modeled as a
 10-minute travel-time threshold, not a mileage threshold.
 
 
-## v0.6.1 UI refinement
+## v0.6.1.1 UI refinement
 
 This release focuses on making the application feel more like an operational
 tool and less like a development prototype.
@@ -304,3 +304,14 @@ The Stations tab now provides an editable `Active` checkbox for every station.
 
 The Stations tab no longer shows the Directory Rows metric, Notes column, or
 Source column.
+
+
+## v0.6.1.1 Streamlit import hotfix
+
+The station availability override logic is now local to `app.py`. The app no
+longer imports the newly introduced `apply_station_active_overrides` helper from
+`routing.py`.
+
+This avoids an import-time failure if Streamlit Cloud temporarily runs the new
+`app.py` against an older cached or partially updated `routing.py` during a
+multi-file GitHub deployment. No v0.6.1 UI or station-toggle behavior changes.
