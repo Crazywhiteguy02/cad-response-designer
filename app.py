@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import html
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
@@ -32,7 +33,7 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CAD Response Designer v0.6.1.1",
+    page_title="CAD Response Designer v0.7.0",
     page_icon="🚒",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -42,202 +43,412 @@ st.markdown(
     """
     <style>
     :root {
-        --cad-navy: #0f2235;
-        --cad-navy-2: #173b56;
-        --cad-red: #b3262e;
-        --cad-red-dark: #8e1e24;
-        --cad-steel: #5e7184;
-        --cad-border: #d8e0e8;
-        --cad-bg: #f3f6f9;
-        --cad-card: #ffffff;
+        --navy-950: #0b1c2c;
+        --navy-900: #10283d;
+        --navy-800: #173a55;
+        --red-600: #b4232d;
+        --red-700: #951d25;
+        --slate-700: #425466;
+        --slate-500: #718096;
+        --slate-300: #d9e1e8;
+        --slate-200: #e7edf2;
+        --slate-100: #f3f6f8;
+        --surface: #ffffff;
+        --success-bg: #e8f5ef;
+        --success-fg: #236148;
+    }
+
+    html, body, [class*="css"] {
+        font-feature-settings: "tnum" 1, "ss01" 1;
     }
 
     .stApp {
-        background: var(--cad-bg);
+        background:
+            radial-gradient(circle at 82% -10%, rgba(23,58,85,.09), transparent 24rem),
+            linear-gradient(180deg, #f7f9fb 0%, #f1f5f8 100%);
     }
 
     .block-container {
-        max-width: 1720px;
-        padding-top: 1rem;
+        max-width: 1600px;
+        padding-top: .8rem;
         padding-bottom: 3rem;
     }
 
-    .cad-hero {
-        position: relative;
-        overflow: hidden;
-        border-radius: 16px;
-        padding: 1.25rem 1.5rem;
-        margin-bottom: 1rem;
-        background:
-            linear-gradient(112deg, rgba(15,34,53,.98) 0%, rgba(23,59,86,.98) 72%, rgba(36,82,103,.98) 100%);
+    /* Application bar */
+    .appbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .8rem 1rem .8rem .85rem;
+        margin-bottom: .9rem;
+        border-radius: 22px;
+        background: rgba(255,255,255,.92);
+        border: 1px solid rgba(217,225,232,.9);
+        box-shadow: 0 8px 30px rgba(11,28,44,.07);
+        backdrop-filter: blur(10px);
+    }
+
+    .brand-wrap {
+        display: flex;
+        align-items: center;
+        gap: .78rem;
+        min-width: 0;
+    }
+
+    .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        background: linear-gradient(145deg, var(--red-600), var(--red-700));
         color: white;
-        border: 1px solid rgba(255,255,255,.08);
-        box-shadow: 0 8px 24px rgba(15,34,53,.16);
+        font-size: .83rem;
+        font-weight: 850;
+        letter-spacing: .04em;
+        box-shadow: 0 5px 14px rgba(180,35,45,.23);
     }
 
-    .cad-hero:after {
-        content: "";
-        position: absolute;
-        right: 0;
-        top: 0;
-        width: 8px;
-        height: 100%;
-        background: var(--cad-red);
+    .brand-title {
+        color: var(--navy-950);
+        font-size: 1.22rem;
+        line-height: 1.08;
+        font-weight: 800;
     }
 
-    .cad-hero .title {
-        font-size: 1.85rem;
-        font-weight: 780;
-        line-height: 1.1;
-        letter-spacing: .005em;
-        margin: 0;
+    .brand-sub {
+        color: var(--slate-500);
+        margin-top: .16rem;
+        font-size: .78rem;
     }
 
-    .cad-hero .sub {
-        opacity: .80;
-        font-size: .9rem;
-        margin-top: .4rem;
+    .appbar-right {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
 
-    .section-kicker {
-        color: var(--cad-red);
-        font-weight: 760;
-        font-size: .72rem;
-        letter-spacing: .11em;
-        text-transform: uppercase;
-        margin-bottom: .18rem;
-    }
-
-    .section-title {
-        color: var(--cad-navy);
-        font-size: 1.25rem;
-        font-weight: 760;
-        margin-bottom: .18rem;
-    }
-
-    .small-muted {
-        color: #637487;
-        font-size: .82rem;
-    }
-
-    .status-chip {
-        display: inline-block;
+    .app-status {
         border-radius: 999px;
-        padding: .24rem .62rem;
-        background: #eaf4ef;
-        color: #1f5f47;
-        border: 1px solid #c8e0d4;
+        padding: .28rem .62rem;
+        background: #eef3f6;
+        color: var(--slate-700);
+        font-size: .73rem;
         font-weight: 700;
-        font-size: .76rem;
+        white-space: nowrap;
     }
 
-    /* Main navigation */
+    .version-chip {
+        border-radius: 999px;
+        padding: .28rem .62rem;
+        background: var(--navy-950);
+        color: white;
+        font-size: .72rem;
+        font-weight: 760;
+        white-space: nowrap;
+    }
+
+    /* Primary navigation */
     div[data-baseweb="tab-list"] {
-        gap: .35rem;
-        background: #e9eef3;
-        border-radius: 12px;
-        padding: .28rem;
-        margin-bottom: .8rem;
+        gap: .15rem;
+        background: transparent;
+        padding: .1rem .05rem .45rem .05rem;
+        border-bottom: 1px solid var(--slate-200);
+        margin-bottom: 1rem;
+        overflow-x: auto;
     }
 
     button[data-baseweb="tab"] {
-        border-radius: 9px;
-        padding-left: 1.05rem;
-        padding-right: 1.05rem;
-        font-weight: 680;
-        color: #405366;
+        border-radius: 999px;
+        padding: .48rem .9rem;
+        font-weight: 700;
+        color: #5a6b7b;
+        border: 1px solid transparent;
     }
 
     button[data-baseweb="tab"][aria-selected="true"] {
-        background: white;
-        color: var(--cad-navy);
-        box-shadow: 0 1px 5px rgba(15,34,53,.12);
-    }
-
-    /* Containers, metrics, tables */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        background: var(--cad-card);
-        border-color: var(--cad-border) !important;
-        border-radius: 14px;
-        box-shadow: 0 3px 12px rgba(15,34,53,.045);
-    }
-
-    div[data-testid="stMetric"] {
-        background: #ffffff;
-        border: 1px solid var(--cad-border);
-        padding: .72rem .92rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(15,34,53,.04);
-    }
-
-    div[data-testid="stDataFrame"] {
-        border: 1px solid var(--cad-border);
-        border-radius: 10px;
-        overflow: hidden;
-        background: white;
-    }
-
-    div[data-testid="stExpander"] {
-        background: white;
-        border: 1px solid var(--cad-border);
-        border-radius: 11px;
-    }
-
-    /* Primary action */
-    div[data-testid="stButton"] > button[kind="primary"] {
-        background: var(--cad-red);
-        border-color: var(--cad-red);
+        background: var(--navy-950);
         color: white;
-        font-weight: 760;
-        border-radius: 10px;
-        min-height: 3rem;
-        box-shadow: 0 4px 12px rgba(179,38,46,.18);
+        box-shadow: 0 4px 12px rgba(11,28,44,.12);
     }
 
-    div[data-testid="stButton"] > button[kind="primary"]:hover {
-        background: var(--cad-red-dark);
-        border-color: var(--cad-red-dark);
+    /* Surface cards */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255,255,255,.96);
+        border: 1px solid rgba(217,225,232,.78) !important;
+        border-radius: 24px !important;
+        box-shadow: 0 10px 30px rgba(11,28,44,.055);
+        padding: .12rem;
+    }
+
+    .section-kicker {
+        color: var(--red-600);
+        font-weight: 800;
+        font-size: .67rem;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+        margin-bottom: .12rem;
+    }
+
+    .section-title {
+        color: var(--navy-950);
+        font-size: 1.18rem;
+        font-weight: 790;
+        margin-bottom: .1rem;
+    }
+
+    .small-muted {
+        color: var(--slate-500);
+        font-size: .8rem;
     }
 
     /* Inputs */
     div[data-baseweb="select"] > div,
     div[data-baseweb="input"] > div {
-        border-radius: 9px;
+        border-radius: 14px !important;
+        border-color: var(--slate-300);
+        min-height: 2.65rem;
     }
 
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        border-radius: 999px;
+    }
+
+    /* Segmented controls: app-like toggle groups */
+    div[data-testid="stSegmentedControl"] {
+        margin-top: .1rem;
+    }
+
+    div[data-testid="stSegmentedControl"] button {
+        border-radius: 999px !important;
+        min-height: 2.55rem;
+        font-weight: 700;
+    }
+
+    /* Metrics */
+    div[data-testid="stMetric"] {
+        background: #f8fafb;
+        border: 0;
+        padding: .68rem .84rem;
+        border-radius: 16px;
+        box-shadow: none;
+    }
+
+    div[data-testid="stMetric"] label {
+        color: var(--slate-500);
+    }
+
+    /* Primary action */
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background: linear-gradient(135deg, var(--red-600), var(--red-700));
+        border: 0;
+        color: white;
+        font-weight: 820;
+        border-radius: 999px;
+        min-height: 3.15rem;
+        box-shadow: 0 8px 20px rgba(180,35,45,.2);
+        letter-spacing: .01em;
+    }
+
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
+        filter: brightness(.96);
+        box-shadow: 0 10px 24px rgba(180,35,45,.24);
+    }
+
+    div[data-testid="stButton"] > button:not([kind="primary"]) {
+        border-radius: 999px;
+    }
+
+    /* Expanders and data surfaces */
+    div[data-testid="stExpander"] {
+        background: rgba(248,250,251,.82);
+        border: 1px solid var(--slate-200);
+        border-radius: 18px;
+        overflow: hidden;
+    }
+
+    div[data-testid="stDataFrame"] {
+        border: 1px solid var(--slate-200);
+        border-radius: 16px;
+        overflow: hidden;
+        background: white;
+    }
+
+    div[data-testid="stAlert"] {
+        border-radius: 16px;
+    }
+
+    /* Context ribbon */
     .context-strip {
         display: flex;
         align-items: center;
-        gap: .65rem;
+        gap: .55rem;
         flex-wrap: wrap;
-        margin-top: .75rem;
-        padding: .65rem .8rem;
-        border-radius: 10px;
-        background: #eef3f7;
-        border: 1px solid #d8e0e8;
+        margin-top: .65rem;
     }
 
     .context-pill {
-        background: var(--cad-navy);
-        color: white;
+        background: #eaf0f4;
+        color: var(--navy-900);
         border-radius: 999px;
-        padding: .22rem .62rem;
-        font-size: .76rem;
-        font-weight: 720;
+        padding: .3rem .66rem;
+        font-size: .74rem;
+        font-weight: 760;
     }
 
     .context-main {
-        color: var(--cad-navy);
-        font-weight: 780;
+        color: var(--navy-950);
+        font-size: .95rem;
+        font-weight: 820;
     }
 
     .context-desc {
-        color: #5d6d7e;
+        color: var(--slate-500);
+        font-size: .82rem;
+    }
+
+    /* Simulation summary */
+    .result-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin: .7rem 0 .9rem 0;
+    }
+
+    .summary-pill {
+        border-radius: 999px;
+        padding: .38rem .72rem;
+        background: #eef3f6;
+        color: var(--slate-700);
+        font-size: .78rem;
+        font-weight: 700;
+    }
+
+    .summary-pill strong {
+        color: var(--navy-950);
+        margin-left: .2rem;
+    }
+
+    .summary-pill.success {
+        background: var(--success-bg);
+        color: var(--success-fg);
+    }
+
+    /* Dispatch cards */
+    .dispatch-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+        gap: .72rem;
+        margin-top: .45rem;
+    }
+
+    .dispatch-card {
+        position: relative;
+        min-height: 92px;
+        padding: .85rem .9rem .82rem 3.65rem;
+        border-radius: 19px;
+        background: linear-gradient(155deg, #ffffff, #f8fafb);
+        border: 1px solid var(--slate-200);
+        box-shadow: 0 5px 16px rgba(11,28,44,.045);
+    }
+
+    .dispatch-order {
+        position: absolute;
+        left: .86rem;
+        top: .82rem;
+        width: 2.15rem;
+        height: 2.15rem;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: var(--navy-950);
+        color: white;
+        font-weight: 850;
         font-size: .86rem;
     }
 
+    .dispatch-unit {
+        color: var(--navy-950);
+        font-size: 1.08rem;
+        line-height: 1.05;
+        font-weight: 850;
+    }
+
+    .dispatch-req {
+        color: var(--red-600);
+        font-size: .73rem;
+        font-weight: 780;
+        letter-spacing: .02em;
+        margin-top: .28rem;
+    }
+
+    .dispatch-meta {
+        color: var(--slate-500);
+        font-size: .74rem;
+        margin-top: .32rem;
+    }
+
+    .map-shell {
+        overflow: hidden;
+        border-radius: 20px;
+    }
+
     hr {
-        border-color: #dde4eb !important;
+        border-color: var(--slate-200) !important;
+    }
+
+    /* Phone / narrow layout */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: .65rem;
+            padding-right: .65rem;
+            padding-top: .55rem;
+        }
+
+        .appbar {
+            border-radius: 18px;
+            padding: .7rem;
+        }
+
+        .brand-mark {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+        }
+
+        .brand-title {
+            font-size: 1.02rem;
+        }
+
+        .brand-sub {
+            display: none;
+        }
+
+        .app-status {
+            display: none;
+        }
+
+        .version-chip {
+            font-size: .68rem;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 20px !important;
+        }
+
+        .dispatch-grid {
+            grid-template-columns: 1fr;
+        }
+
+        button[data-baseweb="tab"] {
+            white-space: nowrap;
+            padding-left: .72rem;
+            padding-right: .72rem;
+        }
     }
     </style>
     """,
@@ -246,9 +457,18 @@ st.markdown(
 
 st.markdown(
     """
-    <div class="cad-hero">
-      <div class="title">CAD Response Designer</div>
-      <div class="sub">Response-plan simulation, regional routing, and operational scenario testing · v0.6.1.1</div>
+    <div class="appbar">
+      <div class="brand-wrap">
+        <div class="brand-mark">CRD</div>
+        <div>
+          <div class="brand-title">CAD Response Designer</div>
+          <div class="brand-sub">Response-plan simulation and regional routing</div>
+        </div>
+      </div>
+      <div class="appbar-right">
+        <span class="app-status">Simulation environment</span>
+        <span class="version-chip">v0.7.0</span>
+      </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -775,6 +995,41 @@ def _section_header(kicker: str, title: str, note: str | None = None):
     )
 
 
+def _render_dispatch_cards(result_rows: list[dict]):
+    """Render the primary dispatch result as application cards rather than a spreadsheet."""
+    cards = []
+    for row in result_rows:
+        order = html.escape(str(row.get("Dispatch Order", "")))
+        unit = html.escape(str(row.get("Unit", "")))
+        requirement = html.escape(str(row.get("Requirement", "")))
+
+        meta_parts = []
+        if row.get("Estimated Travel Time"):
+            meta_parts.append(html.escape(str(row["Estimated Travel Time"])))
+        if row.get("Road Distance (mi)") not in (None, ""):
+            try:
+                meta_parts.append(f'{float(row["Road Distance (mi)"]):.2f} mi')
+            except (TypeError, ValueError):
+                pass
+
+        meta = " · ".join(meta_parts)
+        meta_html = f'<div class="dispatch-meta">{meta}</div>' if meta else ""
+
+        cards.append(
+            '<div class="dispatch-card">'
+            f'<div class="dispatch-order">{order}</div>'
+            f'<div class="dispatch-unit">{unit}</div>'
+            f'<div class="dispatch-req">{requirement}</div>'
+            f'{meta_html}'
+            '</div>'
+        )
+
+    st.markdown(
+        '<div class="dispatch-grid">' + "".join(cards) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 with simulator_tab:
     condition_records = operational_conditions(event_plan_map)
     condition_ids = [r["operational_condition"] for r in condition_records]
@@ -785,28 +1040,35 @@ with simulator_tab:
     with st.container(border=True):
         _section_header("Dispatch setup", "Operational context")
 
-        setup_c1, setup_c2 = st.columns([1.15, 1.25], gap="large")
+        condition_label_by_id = {
+            cid: condition_names[cid] for cid in condition_ids
+        }
+        condition_id_by_label = {
+            label: cid for cid, label in condition_label_by_id.items()
+        }
+        condition_labels = [condition_label_by_id[cid] for cid in condition_ids]
 
-        with setup_c1:
-            condition_id = st.radio(
-                "Operational Condition",
-                options=condition_ids,
-                format_func=lambda x: f"Condition {x} — {condition_names[x]}",
-                horizontal=False,
-                key="operational_condition",
-            )
+        condition_choice = st.segmented_control(
+            "Operational Condition",
+            options=condition_labels,
+            default=condition_labels[0],
+            selection_mode="single",
+            key="operational_condition_v070",
+            width="stretch",
+        )
+        condition_choice = condition_choice or condition_labels[0]
+        condition_id = condition_id_by_label.get(condition_choice, condition_ids[0])
 
         event_records = event_types_for_condition(condition_id, event_plan_map)
         event_ids = [r["event_type"] for r in event_records]
         event_descriptions = {r["event_type"]: r["description"] for r in event_records}
 
-        with setup_c2:
-            event_type = st.selectbox(
-                "Event Type",
-                options=event_ids,
-                format_func=lambda x: f"{x} — {event_descriptions[x]}",
-                key="event_type",
-            )
+        event_type = st.selectbox(
+            "Event Type",
+            options=event_ids,
+            format_func=lambda x: f"{x} — {event_descriptions[x]}",
+            key="event_type_v070",
+        )
 
         mapping = resolve_response_plan(event_type, condition_id, event_plan_map)
         response_plan_id = mapping["response_plan_id"]
@@ -815,8 +1077,8 @@ with simulator_tab:
             f"""
             <div class="context-strip">
               <span class="context-pill">Condition {condition_id}</span>
-              <span class="context-main">{event_type}</span>
-              <span class="context-desc">{event_descriptions[event_type]}</span>
+              <span class="context-main">{html.escape(event_type)}</span>
+              <span class="context-desc">{html.escape(event_descriptions[event_type])}</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -825,19 +1087,26 @@ with simulator_tab:
     st.write("")
 
     with st.container(border=True):
-        _section_header("Incident", "Location and routing")
+        _section_header("Incident", "Location")
 
-        route_c1, route_c2 = st.columns([1.0, 2.25], gap="large")
-        with route_c1:
-            routing_mode = st.radio(
-                "Routing Mode",
-                ["OpenStreetMap / OSRM", "Manual Test Time"],
-                horizontal=False,
-                help=(
-                    "OSM mode ranks eligible candidates by estimated network travel time. "
-                    "Manual mode uses the entered test time in minutes."
-                ),
-            )
+        route_choice = st.segmented_control(
+            "Routing",
+            options=["Road Network", "Manual Time"],
+            default="Road Network",
+            selection_mode="single",
+            key="routing_mode_v070",
+            width="stretch",
+            help=(
+                "Road Network uses OpenStreetMap / OSRM travel time. "
+                "Manual Time uses the test time entered for each unit."
+            ),
+        )
+        route_choice = route_choice or "Road Network"
+        routing_mode = (
+            "OpenStreetMap / OSRM"
+            if route_choice == "Road Network"
+            else "Manual Test Time"
+        )
 
         incident_point = None
         incident_mode = None
@@ -845,42 +1114,51 @@ with simulator_tab:
         incident_lat = 38.8500
         incident_lon = -77.3000
 
-        with route_c2:
-            if routing_mode == "OpenStreetMap / OSRM":
-                incident_mode = st.radio(
-                    "Incident Location",
-                    ["Street Address", "Latitude / Longitude"],
-                    horizontal=True,
+        if routing_mode == "OpenStreetMap / OSRM":
+            incident_choice = st.segmented_control(
+                "Location Input",
+                options=["Address", "Coordinates"],
+                default="Address",
+                selection_mode="single",
+                key="incident_mode_v070",
+                width="stretch",
+            )
+            incident_choice = incident_choice or "Address"
+            incident_mode = (
+                "Street Address"
+                if incident_choice == "Address"
+                else "Latitude / Longitude"
+            )
+
+            if incident_mode == "Street Address":
+                incident_address = st.text_input(
+                    "Incident address",
+                    placeholder="12000 Government Center Pkwy, Fairfax, VA 22035",
+                    label_visibility="collapsed",
+                    key="incident_address_v070",
                 )
-                if incident_mode == "Street Address":
-                    incident_address = st.text_input(
-                        "Incident address",
-                        placeholder="12000 Government Center Pkwy, Fairfax, VA 22035",
-                        label_visibility="collapsed",
-                    )
-                else:
-                    lat_c, lon_c = st.columns(2)
-                    with lat_c:
-                        incident_lat = st.number_input(
-                            "Latitude",
-                            min_value=-90.0,
-                            max_value=90.0,
-                            value=38.8500,
-                            format="%.6f",
-                        )
-                    with lon_c:
-                        incident_lon = st.number_input(
-                            "Longitude",
-                            min_value=-180.0,
-                            max_value=180.0,
-                            value=-77.3000,
-                            format="%.6f",
-                        )
             else:
-                st.info(
-                    "Manual Test Time mode does not require an incident location. "
-                    "Enter the test time for each unit below."
-                )
+                lat_c, lon_c = st.columns(2)
+                with lat_c:
+                    incident_lat = st.number_input(
+                        "Latitude",
+                        min_value=-90.0,
+                        max_value=90.0,
+                        value=38.8500,
+                        format="%.6f",
+                        key="incident_lat_v070",
+                    )
+                with lon_c:
+                    incident_lon = st.number_input(
+                        "Longitude",
+                        min_value=-180.0,
+                        max_value=180.0,
+                        value=-77.3000,
+                        format="%.6f",
+                        key="incident_lon_v070",
+                    )
+        else:
+            st.caption("Manual Time uses the Test Time value in Unit Configuration.")
 
     st.write("")
 
@@ -888,20 +1166,32 @@ with simulator_tab:
         _section_header("Resources", "Units in service")
 
         selected_ids = st.multiselect(
-            "Units in service",
+            "Available units",
             options=catalog["unit_id"].tolist(),
             default=default_units,
-            help="Search by Unit ID. Only selected units participate in the simulation.",
+            help="Only selected units participate in the simulation.",
+            key="units_in_service_v070",
         )
 
-        selected = catalog[catalog["unit_id"].isin(selected_ids)].copy().sort_values("unit_id")
+        selected = (
+            catalog[catalog["unit_id"].isin(selected_ids)]
+            .copy()
+            .sort_values("unit_id")
+        )
 
-        summary_c1, summary_c2 = st.columns(2)
-        summary_c1.metric("Units in service", len(selected_ids))
-        summary_c2.metric(
-            "Stations represented",
+        unit_count = len(selected_ids)
+        station_count = (
             selected["station_id"].replace("", pd.NA).dropna().nunique()
-            if not selected.empty else 0,
+            if not selected.empty else 0
+        )
+        st.markdown(
+            f"""
+            <div class="result-summary">
+              <span class="summary-pill">Units <strong>{unit_count}</strong></span>
+              <span class="summary-pill">Stations <strong>{station_count}</strong></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
         rows = []
@@ -927,10 +1217,10 @@ with simulator_tab:
             })
 
         scenario_df = pd.DataFrame(rows)
-
         edited = scenario_df
+
         if not scenario_df.empty:
-            with st.expander("Unit configuration", expanded=True):
+            with st.expander("Unit Configuration", expanded=False):
                 edited = st.data_editor(
                     scenario_df,
                     hide_index=True,
@@ -940,44 +1230,37 @@ with simulator_tab:
                         "Beat": st.column_config.SelectboxColumn(
                             "Beat",
                             options=BEAT_OPTIONS,
-                            help="Select one current beat for the unit.",
                         ),
                         "Station": st.column_config.SelectboxColumn(
                             "Station",
                             options=STATION_OPTIONS,
-                            help="Select one current station for the unit.",
                         ),
                         "Attributes": st.column_config.MultiselectColumn(
                             "Attributes",
                             options=ATTRIBUTE_OPTIONS,
                             accept_new_options=True,
-                            help="Select one or more unit attributes.",
                             width="large",
                         ),
                         "Equipment": st.column_config.MultiselectColumn(
                             "Equipment",
                             options=EQUIPMENT_OPTIONS,
                             accept_new_options=True,
-                            help="Select one or more equipment codes.",
                             width="large",
                         ),
                         "M Skills": st.column_config.SelectboxColumn(
                             "M Skills",
                             options=[0, 1, 2, 3, 4],
-                            help="Rostered personnel with personnel skill M.",
                         ),
                         "Test Time (min)": st.column_config.NumberColumn(
                             "Test Time (min)",
                             min_value=0.0,
                             step=0.1,
-                            help="Manual-mode stand-in for CAD travel time.",
                         ),
                         "Typical ALS Equipment": st.column_config.TextColumn(
                             "Typical ALS Equipment",
-                            help="Reference only.",
                         ),
                     },
-                    key="scenario_editor_v061",
+                    key="scenario_editor_v070",
                 )
 
             for _, row in edited.iterrows():
@@ -1012,8 +1295,7 @@ with simulator_tab:
 
             if m_suffix_missing_afr:
                 st.warning(
-                    "Missing AFR equipment assignment: "
-                    + ", ".join(m_suffix_missing_afr)
+                    "Missing AFR equipment: " + ", ".join(m_suffix_missing_afr)
                 )
 
             conflicts = pair_conflicts(edited)
@@ -1024,22 +1306,26 @@ with simulator_tab:
         map_scope = "Dispatched units only"
         map_extra_units = []
         if routing_mode == "OpenStreetMap / OSRM":
-            with st.expander("Map display", expanded=False):
-                map_scope = st.radio(
+            with st.expander("Map Display", expanded=False):
+                map_choice = st.segmented_control(
                     "Routes shown",
-                    [
-                        "Dispatched units only",
-                        "Dispatched + selected in-service units",
-                        "All in-service units",
-                    ],
-                    index=0,
+                    options=["Dispatched", "Dispatched + Selected", "All In Service"],
+                    default="Dispatched",
+                    selection_mode="single",
+                    key="map_scope_v070",
+                    width="stretch",
                 )
-                if map_scope == "Dispatched + selected in-service units":
+                map_choice = map_choice or "Dispatched"
+                if map_choice == "Dispatched + Selected":
+                    map_scope = "Dispatched + selected in-service units"
                     map_extra_units = st.multiselect(
                         "Additional units",
                         options=selected_ids,
                         default=[],
+                        key="map_extra_v070",
                     )
+                elif map_choice == "All In Service":
+                    map_scope = "All in-service units"
 
     st.write("")
 
@@ -1077,7 +1363,7 @@ with simulator_tab:
                     else:
                         incident_point = parse_lat_lon(incident_lat, incident_lon)
 
-                    with st.spinner("Calculating regional road-network routes..."):
+                    with st.spinner("Calculating road-network routes..."):
                         routed_frame, route_df, route_map_rows, route_failures = (
                             _routing_dataframe(edited, incident_point)
                         )
@@ -1101,42 +1387,40 @@ with simulator_tab:
                     _section_header(
                         "Simulation result",
                         "Dispatch recommendation",
-                        "Displayed in response-plan dispatch order. ETA does not control the displayed order.",
+                        "Response-plan dispatch order",
                     )
-
-                    result_c1, result_c2, result_c3, result_c4 = st.columns(4)
-                    result_c1.metric("Event Type", event_type)
-                    result_c2.metric("Response Plan", response_plan_id)
-                    result_c3.metric("Dispatched Units", len(ordered_assignments))
-                    result_c4.metric("Condition", f"{condition_id}")
 
                     st.markdown(
-                        '<span class="status-chip">Simulation complete</span>',
+                        f"""
+                        <div class="result-summary">
+                          <span class="summary-pill success">Simulation complete</span>
+                          <span class="summary-pill">Event <strong>{html.escape(event_type)}</strong></span>
+                          <span class="summary-pill">Plan <strong>{html.escape(response_plan_id)}</strong></span>
+                          <span class="summary-pill">Condition <strong>{html.escape(condition_id)}</strong></span>
+                          <span class="summary-pill">Units <strong>{len(ordered_assignments)}</strong></span>
+                        </div>
+                        """,
                         unsafe_allow_html=True,
                     )
-                    st.write("")
 
                     if result_rows:
-                        result_df = pd.DataFrame(result_rows)
-                        st.dataframe(
-                            result_df,
-                            hide_index=True,
-                            use_container_width=True,
-                            column_config={
-                                "Dispatch Order": st.column_config.NumberColumn(
-                                    "Order", width="small"
-                                ),
-                                "Unit": st.column_config.TextColumn(
-                                    "Unit", width="medium"
-                                ),
-                                "Requirement": st.column_config.TextColumn(
-                                    "Requirement", width="medium"
-                                ),
-                                "Road Distance (mi)": st.column_config.NumberColumn(
-                                    "Road mi", format="%.2f"
-                                ),
-                            },
-                        )
+                        _render_dispatch_cards(result_rows)
+
+                        with st.expander("Table View", expanded=False):
+                            result_df = pd.DataFrame(result_rows)
+                            st.dataframe(
+                                result_df,
+                                hide_index=True,
+                                use_container_width=True,
+                                column_config={
+                                    "Dispatch Order": st.column_config.NumberColumn(
+                                        "Order", width="small"
+                                    ),
+                                    "Road Distance (mi)": st.column_config.NumberColumn(
+                                        "Road mi", format="%.2f"
+                                    ),
+                                },
+                            )
                     else:
                         st.info("No resources were recommended from the current scenario.")
 
@@ -1156,24 +1440,28 @@ with simulator_tab:
                     st.write("")
                     with st.container(border=True):
                         _section_header(
-                            "Map",
-                            "Dispatched routes",
-                            "Circular markers identify station origins; the red star marks the incident location.",
+                            "Route map",
+                            "Dispatched units",
+                            "The red star marks the incident.",
                         )
                         deck = _route_map(visible_route_rows, incident_point)
                         if deck is not None:
-                            st.pydeck_chart(deck, use_container_width=True, height=620)
+                            st.pydeck_chart(
+                                deck,
+                                use_container_width=True,
+                                height=560,
+                            )
                         else:
-                            st.info("No route geometry is available for the selected map filter.")
+                            st.info(
+                                "No route geometry is available for the selected map filter."
+                            )
 
-                with st.expander("Technical details", expanded=False):
-                    tech_tabs = st.tabs(
-                        ["Routing diagnostics", "Explanation trace", "Response-plan flow"]
-                    )
+                with st.expander("Technical Details", expanded=False):
+                    tech_tabs = st.tabs(["Routing", "Trace", "Plan Flow"])
 
                     with tech_tabs[0]:
                         if routing_mode != "OpenStreetMap / OSRM":
-                            st.info("Routing diagnostics are available in OSM / OSRM mode.")
+                            st.info("Routing diagnostics are available in Road Network mode.")
                         elif route_df is None or route_df.empty:
                             st.info("No routing diagnostics are available.")
                         else:
@@ -1216,8 +1504,7 @@ with simulator_tab:
                             st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
 
     st.caption(
-        "OSM / OSRM is an independent routing model and will not exactly reproduce "
-        "Hexagon street data, emergency-response speeds, or agency-specific routing impedance."
+        "Road Network uses OpenStreetMap / OSRM and may differ from Hexagon routing."
     )
 
 
@@ -1230,11 +1517,18 @@ with station_tab:
 
     effective_stations = _effective_stations()
 
-    station_metrics = st.columns(2)
-    station_metrics[0].metric("Active stations", int(effective_stations["active"].sum()))
-    station_metrics[1].metric(
-        "Jurisdictions",
-        effective_stations["jurisdiction"].replace("", pd.NA).dropna().nunique(),
+    active_station_count = int(effective_stations["active"].sum())
+    jurisdiction_count = (
+        effective_stations["jurisdiction"].replace("", pd.NA).dropna().nunique()
+    )
+    st.markdown(
+        f"""
+        <div class="result-summary">
+          <span class="summary-pill">Active Stations <strong>{active_station_count}</strong></span>
+          <span class="summary-pill">Jurisdictions <strong>{jurisdiction_count}</strong></span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     search_c, reset_c = st.columns([3.0, 1.0], gap="large")
@@ -1242,14 +1536,14 @@ with station_tab:
         station_search = st.text_input(
             "Search station ID, jurisdiction, name, or address",
             "",
-            key="station_search_v061",
+            key="station_search_v070",
         )
     with reset_c:
         st.write("")
         st.write("")
         if st.button("Restore station defaults", use_container_width=True):
             st.session_state.station_active_overrides = {}
-            st.session_state.pop("station_editor_v061", None)
+            st.session_state.pop("station_editor_v070", None)
             st.rerun()
 
     station_view = effective_stations.copy()
@@ -1302,7 +1596,7 @@ with station_tab:
             "Station Name": st.column_config.TextColumn("Station Name", width="medium"),
             "Routing Address": st.column_config.TextColumn("Routing Address", width="large"),
         },
-        key="station_editor_v061",
+        key="station_editor_v070",
     )
 
     for _, row in edited_stations.iterrows():
@@ -1317,13 +1611,17 @@ with unit_tab:
         "Search the imported unit inventory and modeled default capabilities.",
     )
 
-    unit_metrics = st.columns(3)
-    unit_metrics[0].metric("Imported units", f"{len(catalog):,}")
-    unit_metrics[1].metric(
-        "Unit types", catalog["unit_type"].replace("", pd.NA).dropna().nunique()
-    )
-    unit_metrics[2].metric(
-        "Stations", catalog["station_id"].replace("", pd.NA).dropna().nunique()
+    unit_type_count = catalog["unit_type"].replace("", pd.NA).dropna().nunique()
+    unit_station_count = catalog["station_id"].replace("", pd.NA).dropna().nunique()
+    st.markdown(
+        f"""
+        <div class="result-summary">
+          <span class="summary-pill">Units <strong>{len(catalog):,}</strong></span>
+          <span class="summary-pill">Types <strong>{unit_type_count}</strong></span>
+          <span class="summary-pill">Stations <strong>{unit_station_count}</strong></span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     search_c, type_c = st.columns([2.2, 1.0])
@@ -1331,7 +1629,7 @@ with unit_tab:
         search = st.text_input(
             "Search Unit ID / type / beat / station",
             "",
-            key="unit_search_v060",
+            key="unit_search_v070",
         )
     with type_c:
         type_values = ["All"] + sorted(
