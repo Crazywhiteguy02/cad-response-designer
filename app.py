@@ -21,13 +21,12 @@ from routing import (
     parse_lat_lon,
     route_table,
     route_geometry,
-    filter_route_rows_for_map,
     format_duration,
     RoutingError,
 )
 
-st.set_page_config(page_title="CAD Response Designer v0.5.3", layout="wide")
-st.title("CAD Response Designer — Prototype v0.5.3")
+st.set_page_config(page_title="CAD Response Designer v0.5.3.1", layout="wide")
+st.title("CAD Response Designer — Prototype v0.5.3.1")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
@@ -204,6 +203,48 @@ ROUTE_COLORS = [
     [106, 61, 154, 220],
     [0, 0, 0, 220],
 ]
+
+
+def _filter_route_rows_for_map(
+    route_rows,
+    dispatched_unit_ids,
+    *,
+    show_all=False,
+    additional_unit_ids=None,
+):
+    """Filter station-route rows for the map.
+
+    Defaults to dispatched units only. Additional in-service units may be
+    overlaid without requiring routing.py to provide this UI-only helper.
+    """
+    dispatched = {str(x) for x in dispatched_unit_ids}
+    additional = {str(x) for x in (additional_unit_ids or [])}
+    visible = dispatched | additional
+
+    filtered = []
+    for original in route_rows:
+        row = dict(original)
+        unit_ids = row.get("unit_ids", [])
+
+        if isinstance(unit_ids, str):
+            unit_ids = [x.strip() for x in unit_ids.split(",") if x.strip()]
+        else:
+            unit_ids = [str(x) for x in unit_ids]
+
+        if show_all:
+            visible_here = unit_ids
+        else:
+            visible_here = [uid for uid in unit_ids if uid in visible]
+
+        if not visible_here:
+            continue
+
+        row["visible_unit_ids"] = visible_here
+        row["units"] = ", ".join(visible_here)
+        row["label"] = f"Station {row.get('station', '')} | {', '.join(visible_here)}"
+        filtered.append(row)
+
+    return filtered
 
 
 def _point_from_cached(payload):
@@ -792,7 +833,7 @@ with scenario_tab:
                         else []
                     )
 
-                    visible_route_rows = filter_route_rows_for_map(
+                    visible_route_rows = _filter_route_rows_for_map(
                         route_map_rows,
                         dispatched_ids,
                         show_all=show_all_routes,
@@ -826,7 +867,7 @@ with scenario_tab:
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.5.3"):
+    with st.expander("Current ALPHA flow modeled in v0.5.3.1"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
