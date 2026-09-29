@@ -1,0 +1,4 @@
+event_type,description,operational_condition,condition_name,response_plan_id
+ALPHA,EMS LEVEL 1,1,Normal Operations,ALPHA
+ALPHA,EMS LEVEL 1,2,High Call Volume,ALPHA
+ALPHA,EMS LEVEL 1,3,>50% Unit Utilization,ALPHA
