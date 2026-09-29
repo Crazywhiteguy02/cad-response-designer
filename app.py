@@ -6,16 +6,31 @@ import streamlit as st
 from catalog import load_catalog
 from requirements import REQUIREMENTS
 from alpha_plan import ALPHA_STEPS
-from engine import scenario_units_from_frame, simulate_alpha, pair_conflicts
+from engine import (
+    scenario_units_from_frame,
+    simulate_alpha,
+    pair_conflicts,
+    assignments_in_dispatch_order,
+)
+from routing import (
+    load_station_crosswalk,
+    station_record,
+    geocode_address,
+    parse_lat_lon,
+    route_table,
+    format_duration,
+    RoutingError,
+)
 
-st.set_page_config(page_title="CAD Response Designer v0.4.6", layout="wide")
-st.title("CAD Response Designer — Prototype v0.4.6")
+st.set_page_config(page_title="CAD Response Designer v0.5.1", layout="wide")
+st.title("CAD Response Designer — Prototype v0.5.1")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
 )
 
 catalog = load_catalog()
+stations = load_station_crosswalk()
 
 BEAT_OPTIONS = sorted(
     {str(x).strip() for x in catalog["beat"].tolist() if str(x).strip()}
@@ -86,8 +101,8 @@ default_units = [u for u in default_units if u in set(catalog["unit_id"])]
 if "scenario_overrides" not in st.session_state:
     st.session_state.scenario_overrides = {}
 
-scenario_tab, catalog_tab, req_tab = st.tabs(
-    ["Scenario & ALPHA", "Unit Catalog", "Requirement Library"]
+scenario_tab, station_tab, catalog_tab, req_tab = st.tabs(
+    ["Scenario & ALPHA", "Station Directory", "Unit Catalog", "Requirement Library"]
 )
 
 
@@ -132,12 +147,190 @@ def _attribute_list_from_value(value) -> list[str]:
     return [x.strip() for x in text.split(delimiter) if x.strip()]
 
 
+@st.cache_data(ttl=30 * 24 * 3600, show_spinner=False)
+def _cached_geocode(query: str):
+    point = geocode_address(query)
+    return {"lat": point.lat, "lon": point.lon, "label": point.label}
+
+
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _cached_route_table(origin_payload, destination_payload):
+    from routing import GeoPoint
+    origins = [GeoPoint(lat=float(x[0]), lon=float(x[1]), label=str(x[2])) for x in origin_payload]
+    destination = GeoPoint(
+        lat=float(destination_payload[0]),
+        lon=float(destination_payload[1]),
+        label=str(destination_payload[2]),
+    )
+    metrics = route_table(origins, destination)
+    return [
+        None if m is None else {
+            "distance_miles": m.distance_miles,
+            "duration_seconds": m.duration_seconds,
+        }
+        for m in metrics
+    ]
+
+
+def _point_from_cached(payload):
+    from routing import GeoPoint
+    return GeoPoint(lat=float(payload["lat"]), lon=float(payload["lon"]), label=str(payload["label"]))
+
+
+def _routing_dataframe(edited: pd.DataFrame, incident_point):
+    """Resolve unique station origins and calculate network metrics."""
+    unique_station_ids = list(dict.fromkeys(str(x) for x in edited["Station"].tolist()))
+    station_points = {}
+    station_meta = {}
+    failures = []
+
+    for sid in unique_station_ids:
+        rec = station_record(sid, stations)
+        if rec is None:
+            failures.append((sid, "No station crosswalk entry"))
+            continue
+        if not bool(rec.get("active", False)):
+            failures.append((sid, "Station is marked inactive"))
+            continue
+        query = str(rec.get("address", "")).strip()
+        if not query:
+            failures.append((sid, "No routing/geocoding address"))
+            continue
+        try:
+            cached = _cached_geocode(query)
+            point = _point_from_cached(cached)
+            station_points[sid] = point
+            station_meta[sid] = rec
+        except Exception as exc:
+            failures.append((sid, str(exc)))
+
+    if not station_points:
+        raise RoutingError("None of the selected unit stations could be resolved for routing.")
+
+    ordered_ids = list(station_points)
+    origin_payload = tuple(
+        (station_points[sid].lat, station_points[sid].lon, station_points[sid].label)
+        for sid in ordered_ids
+    )
+    destination_payload = (incident_point.lat, incident_point.lon, incident_point.label)
+    raw_metrics = _cached_route_table(origin_payload, destination_payload)
+
+    metrics_by_station = {}
+    for sid, raw in zip(ordered_ids, raw_metrics):
+        if raw is None:
+            failures.append((sid, "No drivable OSRM route"))
+        else:
+            metrics_by_station[sid] = raw
+
+    routed = edited.copy()
+    routed["Routing Mode"] = "osm"
+    routed["Route Distance Miles"] = pd.NA
+    routed["Route Time Seconds"] = pd.NA
+
+    for idx, row in routed.iterrows():
+        sid = str(row["Station"])
+        metric = metrics_by_station.get(sid)
+        if metric:
+            routed.at[idx, "Route Distance Miles"] = float(metric["distance_miles"])
+            routed.at[idx, "Route Time Seconds"] = float(metric["duration_seconds"])
+
+    route_rows = []
+    for sid, metric in metrics_by_station.items():
+        rec = station_meta[sid]
+        units_here = edited.loc[edited["Station"].astype(str) == sid, "Unit ID"].astype(str).tolist()
+        point = station_points[sid]
+        route_rows.append({
+            "Station": sid,
+            "Station Name": rec.get("station_name", ""),
+            "Jurisdiction": rec.get("jurisdiction", ""),
+            "Units": ", ".join(units_here),
+            "Road Distance (mi)": round(float(metric["distance_miles"]), 2),
+            "Estimated Travel Time": format_duration(float(metric["duration_seconds"])),
+            "Travel Time (sec)": float(metric["duration_seconds"]),
+            "Latitude": point.lat,
+            "Longitude": point.lon,
+        })
+
+    route_df = pd.DataFrame(route_rows)
+    if not route_df.empty:
+        # Diagnostic routing table only. Do not present ETA order as dispatch order.
+        route_df = route_df.sort_values(["Station"])
+
+    return routed, route_df, failures
+
+
+def _result_table(state, routed_frame: pd.DataFrame | None = None):
+    by_unit = {}
+    if routed_frame is not None and not routed_frame.empty:
+        for _, r in routed_frame.iterrows():
+            by_unit[str(r["Unit ID"])] = r
+
+    output = []
+    ordered = assignments_in_dispatch_order(state)
+    for dispatch_index, a in enumerate(ordered, start=1):
+        row = {
+            "Dispatch Order": dispatch_index,
+            "Step": a.step,
+            "Requirement": a.requirement,
+            "Unit": a.unit_id,
+        }
+        if a.unit_id in by_unit:
+            source = by_unit[a.unit_id]
+            if not pd.isna(source.get("Route Distance Miles", pd.NA)):
+                row["Road Distance (mi)"] = round(float(source["Route Distance Miles"]), 2)
+                row["Estimated Travel Time"] = format_duration(float(source["Route Time Seconds"]))
+        output.append(row)
+    return output
+
+
 with scenario_tab:
     st.subheader("Operational test scenario")
     st.write(
         "Choose which CADDBM units are in service, then edit the variables that change most often. "
         "These values affect only the test scenario and do not alter CADDBM."
     )
+
+    routing_mode = st.radio(
+        "Routing Mode",
+        ["OpenStreetMap / OSRM", "Manual Test Distance"],
+        horizontal=True,
+        help=(
+            "OSM mode geocodes the incident and station addresses, then ranks candidates "
+            "by estimated travel time on the OpenStreetMap road network. Manual mode uses "
+            "a user-entered test time in minutes."
+        ),
+    )
+
+    incident_point = None
+    if routing_mode == "OpenStreetMap / OSRM":
+        incident_mode = st.radio(
+            "Incident Location Input",
+            ["Street Address", "Latitude / Longitude"],
+            horizontal=True,
+        )
+        if incident_mode == "Street Address":
+            incident_address = st.text_input(
+                "Incident address",
+                placeholder="Example: 12000 Government Center Pkwy, Fairfax, VA 22035",
+            )
+        else:
+            c1, c2 = st.columns(2)
+            with c1:
+                incident_lat = st.number_input(
+                    "Incident latitude",
+                    min_value=-90.0,
+                    max_value=90.0,
+                    value=38.8500,
+                    format="%.6f",
+                )
+            with c2:
+                incident_lon = st.number_input(
+                    "Incident longitude",
+                    min_value=-180.0,
+                    max_value=180.0,
+                    value=-77.3000,
+                    format="%.6f",
+                )
 
     selected_ids = st.multiselect(
         "Units in service",
@@ -163,7 +356,9 @@ with scenario_tab:
             ),
             "Equipment": _equipment_list_from_saved(saved, r.get("default_equipment", "")),
             "M Skills": saved.get("M Skills", int(r["default_m_skill"])),
-            "Test Distance": saved.get("Test Distance", 5.0),
+            "Test Time (min)": saved.get(
+                "Test Time (min)", saved.get("Test Distance", 5.0)
+            ),
             "Typical ALS Equipment": r["typical_als_equipment"],
         })
 
@@ -172,7 +367,8 @@ with scenario_tab:
     if not scenario_df.empty:
         st.caption(
             "Unit ID and Unit Type are locked. Beat and Station are single-select dropdowns. "
-            "Attributes and Equipment are multi-select fields so multiple values can be assigned."
+            "Attributes and Equipment are multi-select fields. In OSM mode, the manual test time is "
+            "ignored. ALPHA's CAD 'Max Distance 10' setting is treated as a 10-minute travel-time threshold."
         )
 
         edited = st.data_editor(
@@ -215,11 +411,14 @@ with scenario_tab:
                     options=[0, 1, 2, 3, 4],
                     help="Number of rostered personnel with personnel skill M. Typical test range is 0-4."
                 ),
-                "Test Distance": st.column_config.NumberColumn(
-                    "Test Distance",
+                "Test Time (min)": st.column_config.NumberColumn(
+                    "Test Time (min)",
                     min_value=0.0,
                     step=0.1,
-                    help="Temporary stand-in for CAD routing/proximity."
+                    help=(
+                        "Manual-mode stand-in for CAD travel time. "
+                        "ALPHA's configured value of 10 is treated as a 10-minute threshold."
+                    )
                 ),
                 "Typical ALS Equipment": st.column_config.TextColumn(
                     "Typical ALS Equipment",
@@ -243,7 +442,7 @@ with scenario_tab:
                 "Attributes": attributes,
                 "Equipment": equipment,
                 "M Skills": int(row["M Skills"]),
-                "Test Distance": float(row["Test Distance"]),
+                "Test Time (min)": float(row["Test Time (min)"]),
             }
 
         # Make missing ALS equipment conspicuous for M-suffix units that normally carry it.
@@ -274,33 +473,91 @@ with scenario_tab:
                 + ". This is allowed for testing, but normal operations use one or the other."
             )
 
-        if st.button("Simulate ALPHA", type="primary"):
-            units = scenario_units_from_frame(edited)
-            state = simulate_alpha(units)
+        button_label = (
+            "Route & Simulate ALPHA"
+            if routing_mode == "OpenStreetMap / OSRM"
+            else "Simulate ALPHA"
+        )
 
-            st.markdown("#### Recommended resources")
-            if state.assignments:
-                st.dataframe(
-                    [
-                        {
-                            "Step": a.step,
-                            "Requirement": a.requirement,
-                            "Unit": a.unit_id
-                        }
-                        for a in state.assignments
-                    ],
-                    hide_index=True,
-                    use_container_width=True,
-                )
+        if st.button(button_label, type="primary"):
+            routed_frame = None
+            route_df = None
+
+            if routing_mode == "OpenStreetMap / OSRM":
+                try:
+                    if incident_mode == "Street Address":
+                        if not incident_address.strip():
+                            raise RoutingError("Enter an incident address before routing.")
+                        incident_point = _point_from_cached(_cached_geocode(incident_address.strip()))
+                    else:
+                        incident_point = parse_lat_lon(incident_lat, incident_lon)
+
+                    with st.spinner("Calculating OpenStreetMap road-network routes..."):
+                        routed_frame, route_df, route_failures = _routing_dataframe(
+                            edited, incident_point
+                        )
+
+                    st.markdown("#### Routing diagnostics")
+                    st.caption(
+                        f"Incident: {incident_point.label}. "
+                        "This table is diagnostic only and is not the CAD dispatch/display order."
+                    )
+
+                    if route_failures:
+                        failure_text = "; ".join(
+                            f"{sid}: {reason}" for sid, reason in route_failures
+                        )
+                        st.warning(
+                            "Some station origins could not be routed and their units will not be "
+                            f"eligible in OSM mode: {failure_text}"
+                        )
+
+                    if route_df is not None and not route_df.empty:
+                        st.dataframe(
+                            route_df.drop(columns=["Travel Time (sec)", "Latitude", "Longitude"]),
+                            hide_index=True,
+                            use_container_width=True,
+                        )
+
+                        map_rows = route_df[["Latitude", "Longitude"]].rename(
+                            columns={"Latitude": "lat", "Longitude": "lon"}
+                        ).copy()
+                        incident_row = pd.DataFrame([{
+                            "lat": incident_point.lat,
+                            "lon": incident_point.lon,
+                        }])
+                        with st.expander("Show routing points"):
+                            st.map(pd.concat([incident_row, map_rows], ignore_index=True))
+
+                    units = scenario_units_from_frame(routed_frame)
+                except Exception as exc:
+                    st.error(f"Routing failed: {exc}")
+                    units = []
             else:
-                st.info("No resources were recommended from the current scenario.")
+                manual_frame = edited.copy()
+                manual_frame["Routing Mode"] = "manual"
+                units = scenario_units_from_frame(manual_frame)
 
-            st.markdown("#### Explanation trace")
-            st.code("\n".join(state.trace), language="text")
+            if units:
+                state = simulate_alpha(units)
+
+                st.markdown("#### Recommended resources — response-plan dispatch order")
+                if state.assignments:
+                    st.dataframe(
+                        _result_table(state, routed_frame),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("No resources were recommended from the current scenario.")
+
+                st.markdown("#### Explanation trace")
+                st.code("\n".join(state.trace), language="text")
+
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.4.6"):
+    with st.expander("Current ALPHA flow modeled in v0.5.1"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
@@ -309,13 +566,57 @@ with scenario_tab:
                 detail = s.requirement
             else:
                 detail = ""
-            extra = f" | Max Distance {s.max_distance:g}" if s.max_distance is not None else ""
+            extra = (
+                f" | CAD Max Distance {s.max_time_minutes:g} = {s.max_time_minutes:g} min"
+                if s.max_time_minutes is not None else ""
+            )
             st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
 
     st.info(
-        "This prototype does not have Hexagon street-network/routing data. "
-        "Test Distance is therefore used as the candidate-ordering stand-in. "
-        "The ALPHA Max Distance 10 rule is enforced against that test value."
+        "OpenStreetMap / OSRM mode ranks eligible candidates by estimated road-network travel time. "
+        "ALPHA's CAD Max Distance 10 setting is treated as a 10-minute travel-time threshold. "
+        "Manual Test Time remains available as a diagnostic fallback. OSM/OSRM results are an independent routing "
+        "model and are not expected to exactly reproduce Hexagon routing."
+    )
+
+
+with station_tab:
+    st.subheader("Regional station directory")
+    st.write(
+        f"Routable station crosswalk entries: **{len(stations[stations['active']]):,} active** "
+        f"across the requested Washington-region jurisdictions."
+    )
+    station_search = st.text_input("Search stations", "", key="station_search")
+    station_view = stations.copy()
+    if station_search.strip():
+        s = station_search.strip().lower()
+        mask = (
+            station_view["cad_station_id"].str.lower().str.contains(s, regex=False)
+            | station_view["jurisdiction"].str.lower().str.contains(s, regex=False)
+            | station_view["station_name"].str.lower().str.contains(s, regex=False)
+            | station_view["address"].str.lower().str.contains(s, regex=False)
+        )
+        station_view = station_view[mask]
+
+    display_stations = station_view.rename(columns={
+        "cad_station_id": "CAD Station ID",
+        "jurisdiction": "Jurisdiction",
+        "local_station_number": "Local Station",
+        "station_name": "Station Name",
+        "address": "Routing Address",
+        "active": "Active",
+        "notes": "Notes",
+        "source_url": "Source",
+    })[
+        [
+            "CAD Station ID", "Jurisdiction", "Local Station",
+            "Station Name", "Routing Address", "Active", "Notes", "Source"
+        ]
+    ]
+    st.dataframe(display_stations, hide_index=True, use_container_width=True)
+    st.caption(
+        "The three-digit CAD Station ID is the routing crosswalk key. "
+        "Inactive facilities remain visible for traceability but are not routed."
     )
 
 with catalog_tab:
@@ -382,5 +683,7 @@ with req_tab:
 st.divider()
 st.caption(
     "Prototype only. No connection to production I/CAD. "
-    "Scenario edits are temporary and may reset when Streamlit redeploys."
+    "OpenStreetMap data © OpenStreetMap contributors. Geocoding uses the public Nominatim service "
+    "and routing uses OSRM for prototype validation. Scenario edits are temporary and may reset "
+    "when Streamlit redeploys."
 )

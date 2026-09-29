@@ -13,7 +13,7 @@ class PlanStep:
     yes_step: Optional[int] = None
     no_step: Optional[int] = None
     next_step: Optional[int] = None
-    max_distance: Optional[float] = None
+    max_time_minutes: Optional[float] = None
     display_order: Optional[int] = None
 
 
@@ -21,8 +21,8 @@ class PlanStep:
 # Hatched/blank branches are modeled as pass-through paths.
 ALPHA_STEPS: dict[int, PlanStep] = {
     1: PlanStep(
-        1, "REQUIREMENT", "Initial medic (Max Distance 10)",
-        requirement="M", yes_step=3, no_step=2, max_distance=10.0
+        1, "REQUIREMENT", "Initial medic (CAD Max Distance 10 = 10-minute threshold)",
+        requirement="M", yes_step=3, no_step=2, max_time_minutes=10.0
     ),
     2: PlanStep(
         2, "GROUP", "Fallback if initial M cannot be recommended",

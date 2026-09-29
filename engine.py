@@ -17,7 +17,10 @@ class ScenarioUnit:
     attributes: set[str]
     equipment: dict[str, int]
     m_skill_count: int
-    test_distance: float
+    test_time_minutes: float
+    routing_mode: str = "manual"
+    route_distance_miles: float | None = None
+    route_time_seconds: float | None = None
 
 
 @dataclass
@@ -25,6 +28,8 @@ class Assignment:
     step: int
     requirement: str
     unit_id: str
+    sequence: int = 0
+    display_order: int | None = None
 
 
 @dataclass
@@ -73,7 +78,18 @@ def scenario_units_from_frame(frame: pd.DataFrame) -> list[ScenarioUnit]:
                 ),
                 equipment=equipment_from_text(equipment_text),
                 m_skill_count=int(r.get("M Skills", 0) or 0),
-                test_distance=float(r.get("Test Distance", 999) or 999),
+                test_time_minutes=float(
+                    r.get("Test Time (min)", r.get("Test Distance", 999)) or 999
+                ),
+                routing_mode=str(r.get("Routing Mode", "manual") or "manual").lower(),
+                route_distance_miles=(
+                    None if pd.isna(r.get("Route Distance Miles", None))
+                    else float(r.get("Route Distance Miles"))
+                ),
+                route_time_seconds=(
+                    None if pd.isna(r.get("Route Time Seconds", None))
+                    else float(r.get("Route Time Seconds"))
+                ),
             )
         )
     return units
@@ -133,23 +149,56 @@ def selected_satisfies(req: Requirement, selected: list[ScenarioUnit]) -> tuple[
     )
 
 
+def _route_ready(unit: ScenarioUnit) -> bool:
+    if unit.routing_mode != "osm":
+        return True
+    return unit.route_distance_miles is not None and unit.route_time_seconds is not None
+
+
+def _time_for_limit_minutes(unit: ScenarioUnit) -> float:
+    # CAD ALPHA "Max Distance 10" is operationally a 10-minute threshold.
+    # In OSM mode, use calculated network travel time. In manual mode, use
+    # the user-entered test time in minutes.
+    if unit.routing_mode == "osm" and unit.route_time_seconds is not None:
+        return unit.route_time_seconds / 60.0
+    return unit.test_time_minutes
+
+
+def _ordering_value(unit: ScenarioUnit) -> float:
+    # Candidate selection uses travel time. OSM mode uses calculated seconds;
+    # manual mode uses the entered test time.
+    if unit.routing_mode == "osm" and unit.route_time_seconds is not None:
+        return unit.route_time_seconds
+    return unit.test_time_minutes * 60.0
+
+
+def _routing_trace(unit: ScenarioUnit) -> str:
+    if unit.routing_mode == "osm" and unit.route_distance_miles is not None and unit.route_time_seconds is not None:
+        total = int(round(unit.route_time_seconds))
+        minutes, seconds = divmod(total, 60)
+        return f" | route={unit.route_distance_miles:.2f} mi, eta={minutes}:{seconds:02d}"
+    return f" | test time={unit.test_time_minutes:.2f} min"
+
+
 def choose_for_requirement(
     req_name: str,
     units: list[ScenarioUnit],
     state: SimulationState,
     *,
-    max_distance: float | None = None,
+    max_time_minutes: float | None = None,
 ) -> tuple[ScenarioUnit | None, list[str]]:
     req = REQUIREMENTS[req_name]
     candidates = []
     for u in units:
         if u.unit_id in state.consumed_units:
             continue
-        if max_distance is not None and u.test_distance > max_distance:
+        if not _route_ready(u):
+            continue
+        if max_time_minutes is not None and _time_for_limit_minutes(u) > max_time_minutes:
             continue
         ok, reasons = qualifies(u, req)
         if ok:
-            candidates.append((u.test_distance, u.unit_id, u, reasons))
+            candidates.append((_ordering_value(u), u.unit_id, u, reasons))
     if not candidates:
         return None, []
     candidates.sort(key=lambda x: (x[0], x[1]))
@@ -168,11 +217,13 @@ def choose_for_group(
         for u in units:
             if u.unit_id in state.consumed_units:
                 continue
+            if not _route_ready(u):
+                continue
             ok, reasons = qualifies(u, req)
             if ok:
-                # CAD routing/proximity is not available in v0.4. The user-editable
-                # Test Distance is the stand-in; requirement order breaks equal-distance ties.
-                candidates.append((u.test_distance, alt_order, u.unit_id, req_name, u, reasons))
+                # OSM mode ranks by estimated travel time. Manual mode ranks by
+                # Test Distance. Requirement order breaks equal-routing ties.
+                candidates.append((_ordering_value(u), alt_order, u.unit_id, req_name, u, reasons))
     if not candidates:
         return None, None, []
     candidates.sort(key=lambda x: (x[0], x[1], x[2]))
@@ -199,19 +250,35 @@ def simulate_alpha(units: list[ScenarioUnit]) -> SimulationState:
 
         if step.kind == "REQUIREMENT":
             unit, reasons = choose_for_requirement(
-                step.requirement, units, state, max_distance=step.max_distance
+                step.requirement, units, state, max_time_minutes=step.max_time_minutes
             )
             if unit:
-                state.assignments.append(Assignment(step.number, step.requirement, unit.unit_id))
-                max_note = f" within max distance {step.max_distance:g}" if step.max_distance is not None else ""
+                state.assignments.append(
+                    Assignment(
+                        step.number,
+                        step.requirement,
+                        unit.unit_id,
+                        sequence=len(state.assignments) + 1,
+                        display_order=step.display_order,
+                    )
+                )
+                max_note = (
+                    f" within {step.max_time_minutes:g}-minute threshold"
+                    if step.max_time_minutes is not None else ""
+                )
                 state.trace.append(
-                    f"{step.requirement}: selected {unit.unit_id}{max_note} — " + "; ".join(reasons)
+                    f"{step.requirement}: selected {unit.unit_id}{max_note} — "
+                    + "; ".join(reasons)
+                    + _routing_trace(unit)
                 )
                 current = step.yes_step if step.yes_step is not None else step.next_step
             else:
                 state.trace.append(
                     f"{step.requirement}: no eligible unconsumed unit"
-                    + (f" within max distance {step.max_distance:g}" if step.max_distance is not None else "")
+                    + (
+                        f" within {step.max_time_minutes:g}-minute threshold"
+                        if step.max_time_minutes is not None else ""
+                    )
                 )
                 current = step.no_step if step.no_step is not None else step.next_step
             continue
@@ -219,9 +286,19 @@ def simulate_alpha(units: list[ScenarioUnit]) -> SimulationState:
         if step.kind == "GROUP":
             req_name, unit, reasons = choose_for_group(step.alternatives, units, state)
             if unit:
-                state.assignments.append(Assignment(step.number, req_name, unit.unit_id))
+                state.assignments.append(
+                    Assignment(
+                        step.number,
+                        req_name,
+                        unit.unit_id,
+                        sequence=len(state.assignments) + 1,
+                        display_order=step.display_order,
+                    )
+                )
                 state.trace.append(
-                    f"GROUP selected {unit.unit_id} via {req_name} — " + "; ".join(reasons)
+                    f"GROUP selected {unit.unit_id} via {req_name} — "
+                    + "; ".join(reasons)
+                    + _routing_trace(unit)
                 )
                 if unit.m_skill_count:
                     state.trace.append(f"{unit.unit_id} contributes {unit.m_skill_count} personnel skill M")
@@ -244,6 +321,22 @@ def simulate_alpha(units: list[ScenarioUnit]) -> SimulationState:
 
     return state
 
+
+
+def assignments_in_dispatch_order(state: SimulationState) -> list[Assignment]:
+    """Return recommendations in response-plan display/dispatch order.
+
+    Explicit CADDBM Display Order values are honored first. Items without an
+    explicit Display Order retain their response-plan recommendation sequence.
+    Routing ETA never controls the displayed recommendation sequence.
+    """
+    explicit = [a for a in state.assignments if a.display_order is not None]
+    implicit = [a for a in state.assignments if a.display_order is None]
+
+    explicit.sort(key=lambda a: (a.display_order, a.sequence))
+    implicit.sort(key=lambda a: a.sequence)
+
+    return explicit + implicit
 
 def pair_conflicts(frame: pd.DataFrame) -> list[tuple[str, str]]:
     """Find simultaneous base/M-suffix unit pairs without exposing a Pair Unit column.
