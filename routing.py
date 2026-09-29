@@ -48,6 +48,18 @@ def load_station_crosswalk() -> pd.DataFrame:
     return df
 
 
+
+def apply_station_active_overrides(
+    stations: pd.DataFrame,
+    overrides: dict[str, bool] | None = None,
+) -> pd.DataFrame:
+    """Return station data with session/scenario active overrides applied."""
+    effective = stations.copy()
+    for sid, enabled in (overrides or {}).items():
+        mask = effective["cad_station_id"].astype(str) == str(sid)
+        effective.loc[mask, "active"] = bool(enabled)
+    return effective
+
 def station_record(station_id: str, stations: pd.DataFrame | None = None) -> dict | None:
     stations = load_station_crosswalk() if stations is None else stations
     match = stations[stations["cad_station_id"] == str(station_id)]

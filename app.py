@@ -13,7 +13,6 @@ from event_config import (
     operational_conditions,
     event_types_for_condition,
     resolve_response_plan,
-    response_plan_changes_by_condition,
 )
 from engine import (
     scenario_units_from_frame,
@@ -23,6 +22,7 @@ from engine import (
 )
 from routing import (
     load_station_crosswalk,
+    apply_station_active_overrides,
     station_record,
     geocode_address,
     parse_lat_lon,
@@ -33,7 +33,7 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CAD Response Designer v0.6.0",
+    page_title="CAD Response Designer v0.6.1",
     page_icon="🚒",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -42,96 +42,203 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    :root {
+        --cad-navy: #0f2235;
+        --cad-navy-2: #173b56;
+        --cad-red: #b3262e;
+        --cad-red-dark: #8e1e24;
+        --cad-steel: #5e7184;
+        --cad-border: #d8e0e8;
+        --cad-bg: #f3f6f9;
+        --cad-card: #ffffff;
+    }
+
+    .stApp {
+        background: var(--cad-bg);
+    }
+
     .block-container {
-        max-width: 1680px;
-        padding-top: 1.25rem;
+        max-width: 1720px;
+        padding-top: 1rem;
         padding-bottom: 3rem;
     }
+
     .cad-hero {
-        border-radius: 14px;
-        padding: 1.15rem 1.35rem;
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        padding: 1.25rem 1.5rem;
         margin-bottom: 1rem;
-        background: linear-gradient(110deg, #182536 0%, #223a50 62%, #28566a 100%);
+        background:
+            linear-gradient(112deg, rgba(15,34,53,.98) 0%, rgba(23,59,86,.98) 72%, rgba(36,82,103,.98) 100%);
         color: white;
         border: 1px solid rgba(255,255,255,.08);
+        box-shadow: 0 8px 24px rgba(15,34,53,.16);
     }
+
+    .cad-hero:after {
+        content: "";
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 8px;
+        height: 100%;
+        background: var(--cad-red);
+    }
+
     .cad-hero .title {
-        font-size: 1.7rem;
-        font-weight: 750;
-        line-height: 1.15;
-        letter-spacing: .01em;
+        font-size: 1.85rem;
+        font-weight: 780;
+        line-height: 1.1;
+        letter-spacing: .005em;
         margin: 0;
     }
+
     .cad-hero .sub {
-        opacity: .82;
-        font-size: .93rem;
-        margin-top: .35rem;
+        opacity: .80;
+        font-size: .9rem;
+        margin-top: .4rem;
     }
+
     .section-kicker {
-        color: #64748b;
-        font-weight: 700;
-        font-size: .74rem;
-        letter-spacing: .09em;
-        text-transform: uppercase;
-        margin-bottom: .2rem;
-    }
-    .section-title {
-        font-size: 1.22rem;
-        font-weight: 720;
-        margin-bottom: .25rem;
-    }
-    .plan-card {
-        min-height: 92px;
-        border: 1px solid #d8e0e8;
-        border-radius: 12px;
-        padding: .85rem 1rem;
-        background: #f8fafc;
-    }
-    .plan-card .label {
-        color: #64748b;
-        font-size: .76rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: .06em;
-    }
-    .plan-card .value {
-        color: #102235;
-        font-size: 1.35rem;
+        color: var(--cad-red);
         font-weight: 760;
-        margin-top: .18rem;
+        font-size: .72rem;
+        letter-spacing: .11em;
+        text-transform: uppercase;
+        margin-bottom: .18rem;
     }
-    .plan-card .note {
-        color: #526274;
-        font-size: .79rem;
-        margin-top: .15rem;
+
+    .section-title {
+        color: var(--cad-navy);
+        font-size: 1.25rem;
+        font-weight: 760;
+        margin-bottom: .18rem;
     }
+
+    .small-muted {
+        color: #637487;
+        font-size: .82rem;
+    }
+
     .status-chip {
         display: inline-block;
         border-radius: 999px;
-        padding: .2rem .55rem;
-        background: #e8f3ee;
-        color: #205d46;
-        border: 1px solid #cce4d8;
-        font-weight: 650;
+        padding: .24rem .62rem;
+        background: #eaf4ef;
+        color: #1f5f47;
+        border: 1px solid #c8e0d4;
+        font-weight: 700;
         font-size: .76rem;
     }
+
+    /* Main navigation */
+    div[data-baseweb="tab-list"] {
+        gap: .35rem;
+        background: #e9eef3;
+        border-radius: 12px;
+        padding: .28rem;
+        margin-bottom: .8rem;
+    }
+
+    button[data-baseweb="tab"] {
+        border-radius: 9px;
+        padding-left: 1.05rem;
+        padding-right: 1.05rem;
+        font-weight: 680;
+        color: #405366;
+    }
+
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: white;
+        color: var(--cad-navy);
+        box-shadow: 0 1px 5px rgba(15,34,53,.12);
+    }
+
+    /* Containers, metrics, tables */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: var(--cad-card);
+        border-color: var(--cad-border) !important;
+        border-radius: 14px;
+        box-shadow: 0 3px 12px rgba(15,34,53,.045);
+    }
+
     div[data-testid="stMetric"] {
         background: #ffffff;
-        border: 1px solid #dfe5eb;
-        padding: .7rem .9rem;
+        border: 1px solid var(--cad-border);
+        padding: .72rem .92rem;
         border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(15,34,53,.04);
     }
+
     div[data-testid="stDataFrame"] {
+        border: 1px solid var(--cad-border);
         border-radius: 10px;
         overflow: hidden;
+        background: white;
     }
+
     div[data-testid="stExpander"] {
-        border: 1px solid #dfe5eb;
-        border-radius: 10px;
+        background: white;
+        border: 1px solid var(--cad-border);
+        border-radius: 11px;
     }
-    .small-muted {
-        color: #64748b;
-        font-size: .82rem;
+
+    /* Primary action */
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background: var(--cad-red);
+        border-color: var(--cad-red);
+        color: white;
+        font-weight: 760;
+        border-radius: 10px;
+        min-height: 3rem;
+        box-shadow: 0 4px 12px rgba(179,38,46,.18);
+    }
+
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
+        background: var(--cad-red-dark);
+        border-color: var(--cad-red-dark);
+    }
+
+    /* Inputs */
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"] > div {
+        border-radius: 9px;
+    }
+
+    .context-strip {
+        display: flex;
+        align-items: center;
+        gap: .65rem;
+        flex-wrap: wrap;
+        margin-top: .75rem;
+        padding: .65rem .8rem;
+        border-radius: 10px;
+        background: #eef3f7;
+        border: 1px solid #d8e0e8;
+    }
+
+    .context-pill {
+        background: var(--cad-navy);
+        color: white;
+        border-radius: 999px;
+        padding: .22rem .62rem;
+        font-size: .76rem;
+        font-weight: 720;
+    }
+
+    .context-main {
+        color: var(--cad-navy);
+        font-weight: 780;
+    }
+
+    .context-desc {
+        color: #5d6d7e;
+        font-size: .86rem;
+    }
+
+    hr {
+        border-color: #dde4eb !important;
     }
     </style>
     """,
@@ -142,7 +249,7 @@ st.markdown(
     """
     <div class="cad-hero">
       <div class="title">CAD Response Designer</div>
-      <div class="sub">Response-plan simulation, regional routing, and operational scenario testing · v0.6.0</div>
+      <div class="sub">Response-plan simulation, regional routing, and operational scenario testing · v0.6.1</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -221,6 +328,9 @@ default_units = [u for u in default_units if u in set(catalog["unit_id"])]
 if "scenario_overrides" not in st.session_state:
     st.session_state.scenario_overrides = {}
 
+if "station_active_overrides" not in st.session_state:
+    st.session_state.station_active_overrides = {}
+
 simulator_tab, station_tab, unit_tab, config_tab = st.tabs(
     ["Dispatch Simulator", "Stations", "Units", "Configuration"]
 )
@@ -265,6 +375,13 @@ def _attribute_list_from_value(value) -> list[str]:
     # Previous versions stored attributes as semicolon-separated text.
     delimiter = ";" if ";" in text else ","
     return [x.strip() for x in text.split(delimiter) if x.strip()]
+
+
+def _effective_stations() -> pd.DataFrame:
+    return apply_station_active_overrides(
+        stations,
+        st.session_state.get("station_active_overrides", {}),
+    )
 
 
 @st.cache_data(ttl=30 * 24 * 3600, show_spinner=False)
@@ -377,7 +494,7 @@ def _routing_dataframe(edited: pd.DataFrame, incident_point):
     failures = []
 
     for sid in unique_station_ids:
-        rec = station_record(sid, stations)
+        rec = station_record(sid, _effective_stations())
         if rec is None:
             failures.append((sid, "No station crosswalk entry"))
             continue
@@ -515,6 +632,28 @@ def _map_view_state(route_map_rows, incident_point):
     )
 
 
+
+def _incident_star_polygon(incident_point):
+    """Create a five-point geographic star around the incident location."""
+    outer = 0.0020
+    inner = 0.00085
+    lat = float(incident_point.lat)
+    lon = float(incident_point.lon)
+    lon_scale = max(math.cos(math.radians(lat)), 0.35)
+
+    points = []
+    for i in range(10):
+        angle = math.radians(-90 + i * 36)
+        radius = outer if i % 2 == 0 else inner
+        dlat = radius * math.sin(angle)
+        dlon = (radius * math.cos(angle)) / lon_scale
+        points.append([lon + dlon, lat + dlat])
+
+    return [{
+        "polygon": points,
+        "location": incident_point.label,
+    }]
+
 def _route_map(route_map_rows, incident_point):
     if not route_map_rows:
         return None
@@ -562,38 +701,15 @@ def _route_map(route_map_rows, incident_point):
         pickable=False,
     )
 
-    incident_data = [{
-        "position": [incident_point.lon, incident_point.lat],
-        "symbol": "★",
-        "label": "INCIDENT",
-        "location": incident_point.label,
-    }]
-
-    # The incident uses a star symbol, clearly different from circular station markers.
-    incident_icon_layer = pdk.Layer(
-        "TextLayer",
-        data=incident_data,
-        get_position="position",
-        get_text="symbol",
-        get_color=[190, 0, 0, 255],
-        get_size=34,
-        get_text_anchor='"middle"',
-        get_alignment_baseline='"center"',
-        billboard=True,
-        pickable=True,
-    )
-
-    incident_label_layer = pdk.Layer(
-        "TextLayer",
-        data=incident_data,
-        get_position="position",
-        get_text="label",
-        get_color=[140, 0, 0, 255],
-        get_size=14,
-        get_pixel_offset=[0, -24],
-        get_text_anchor='"middle"',
-        get_alignment_baseline='"bottom"',
-        billboard=True,
+    incident_star_layer = pdk.Layer(
+        "PolygonLayer",
+        data=_incident_star_polygon(incident_point),
+        get_polygon="polygon",
+        get_fill_color=[190, 0, 0, 245],
+        get_line_color=[255, 255, 255, 255],
+        line_width_min_pixels=2,
+        stroked=True,
+        filled=True,
         pickable=False,
     )
 
@@ -604,8 +720,7 @@ def _route_map(route_map_rows, incident_point):
             path_layer,
             station_layer,
             station_label_layer,
-            incident_icon_layer,
-            incident_label_layer,
+            incident_star_layer,
         ],
         tooltip={
             "html": (
@@ -659,302 +774,272 @@ def _section_header(kicker: str, title: str, note: str | None = None):
 
 
 with simulator_tab:
-    _section_header(
-        "Dispatch setup",
-        "Build the operational scenario",
-        "Select the operating condition and event type first. The associated response plan is resolved automatically.",
-    )
-
     condition_records = operational_conditions(event_plan_map)
     condition_ids = [r["operational_condition"] for r in condition_records]
     condition_names = {
         r["operational_condition"]: r["condition_name"] for r in condition_records
     }
 
-    setup_c1, setup_c2, setup_c3 = st.columns([1.35, 1.35, 1.0], gap="large")
+    with st.container(border=True):
+        _section_header("Dispatch setup", "Operational context")
 
-    with setup_c1:
-        condition_id = st.radio(
-            "Operational Condition",
-            options=condition_ids,
-            format_func=lambda x: f"Condition {x} — {condition_names[x]}",
-            horizontal=False,
-            key="operational_condition",
-        )
+        setup_c1, setup_c2 = st.columns([1.15, 1.25], gap="large")
 
-    event_records = event_types_for_condition(condition_id, event_plan_map)
-    event_ids = [r["event_type"] for r in event_records]
-    event_descriptions = {r["event_type"]: r["description"] for r in event_records}
+        with setup_c1:
+            condition_id = st.radio(
+                "Operational Condition",
+                options=condition_ids,
+                format_func=lambda x: f"Condition {x} — {condition_names[x]}",
+                horizontal=False,
+                key="operational_condition",
+            )
 
-    with setup_c2:
-        event_type = st.selectbox(
-            "Event Type",
-            options=event_ids,
-            format_func=lambda x: f"{x} — {event_descriptions[x]}",
-            key="event_type",
-        )
-        st.caption("Dispatch-facing event type and description.")
+        event_records = event_types_for_condition(condition_id, event_plan_map)
+        event_ids = [r["event_type"] for r in event_records]
+        event_descriptions = {r["event_type"]: r["description"] for r in event_records}
 
-    mapping = resolve_response_plan(event_type, condition_id, event_plan_map)
-    response_plan_id = mapping["response_plan_id"]
-    plan_is_constant = not response_plan_changes_by_condition(event_type, event_plan_map)
+        with setup_c2:
+            event_type = st.selectbox(
+                "Event Type",
+                options=event_ids,
+                format_func=lambda x: f"{x} — {event_descriptions[x]}",
+                key="event_type",
+            )
 
-    with setup_c3:
-        note = (
-            "Same plan under all 3 conditions"
-            if plan_is_constant
-            else f"Mapped from Condition {condition_id}"
-        )
+        mapping = resolve_response_plan(event_type, condition_id, event_plan_map)
+        response_plan_id = mapping["response_plan_id"]
+
         st.markdown(
             f"""
-            <div class="plan-card">
-              <div class="label">Associated Response Plan</div>
-              <div class="value">{response_plan_id}</div>
-              <div class="note">{note}</div>
+            <div class="context-strip">
+              <span class="context-pill">Condition {condition_id}</span>
+              <span class="context-main">{event_type}</span>
+              <span class="context-desc">{event_descriptions[event_type]}</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    st.divider()
+    st.write("")
 
-    _section_header(
-        "Incident",
-        "Location and routing",
-        "Use the road network for operational testing, or switch to manual time for isolated plan validation.",
-    )
+    with st.container(border=True):
+        _section_header("Incident", "Location and routing")
 
-    route_c1, route_c2 = st.columns([1.0, 2.2], gap="large")
-    with route_c1:
-        routing_mode = st.radio(
-            "Routing Mode",
-            ["OpenStreetMap / OSRM", "Manual Test Time"],
-            horizontal=False,
-            help=(
-                "OSM mode ranks eligible candidates by estimated network travel time. "
-                "Manual mode uses the entered test time in minutes."
-            ),
+        route_c1, route_c2 = st.columns([1.0, 2.25], gap="large")
+        with route_c1:
+            routing_mode = st.radio(
+                "Routing Mode",
+                ["OpenStreetMap / OSRM", "Manual Test Time"],
+                horizontal=False,
+                help=(
+                    "OSM mode ranks eligible candidates by estimated network travel time. "
+                    "Manual mode uses the entered test time in minutes."
+                ),
+            )
+
+        incident_point = None
+        incident_mode = None
+        incident_address = ""
+        incident_lat = 38.8500
+        incident_lon = -77.3000
+
+        with route_c2:
+            if routing_mode == "OpenStreetMap / OSRM":
+                incident_mode = st.radio(
+                    "Incident Location",
+                    ["Street Address", "Latitude / Longitude"],
+                    horizontal=True,
+                )
+                if incident_mode == "Street Address":
+                    incident_address = st.text_input(
+                        "Incident address",
+                        placeholder="12000 Government Center Pkwy, Fairfax, VA 22035",
+                        label_visibility="collapsed",
+                    )
+                else:
+                    lat_c, lon_c = st.columns(2)
+                    with lat_c:
+                        incident_lat = st.number_input(
+                            "Latitude",
+                            min_value=-90.0,
+                            max_value=90.0,
+                            value=38.8500,
+                            format="%.6f",
+                        )
+                    with lon_c:
+                        incident_lon = st.number_input(
+                            "Longitude",
+                            min_value=-180.0,
+                            max_value=180.0,
+                            value=-77.3000,
+                            format="%.6f",
+                        )
+            else:
+                st.info(
+                    "Manual Test Time mode does not require an incident location. "
+                    "Enter the test time for each unit below."
+                )
+
+    st.write("")
+
+    with st.container(border=True):
+        _section_header("Resources", "Units in service")
+
+        selected_ids = st.multiselect(
+            "Units in service",
+            options=catalog["unit_id"].tolist(),
+            default=default_units,
+            help="Search by Unit ID. Only selected units participate in the simulation.",
         )
 
-    incident_point = None
-    incident_mode = None
-    incident_address = ""
-    incident_lat = 38.8500
-    incident_lon = -77.3000
+        selected = catalog[catalog["unit_id"].isin(selected_ids)].copy().sort_values("unit_id")
 
-    with route_c2:
+        summary_c1, summary_c2 = st.columns(2)
+        summary_c1.metric("Units in service", len(selected_ids))
+        summary_c2.metric(
+            "Stations represented",
+            selected["station_id"].replace("", pd.NA).dropna().nunique()
+            if not selected.empty else 0,
+        )
+
+        rows = []
+        for _, r in selected.iterrows():
+            uid = r["unit_id"]
+            saved = st.session_state.scenario_overrides.get(uid, {})
+            rows.append({
+                "Unit ID": uid,
+                "Unit Type": r["unit_type"],
+                "Beat": saved.get("Beat", r["beat"]),
+                "Station": saved.get("Station", r["station_id"]),
+                "Attributes": _attribute_list_from_value(
+                    saved.get("Attributes", r["default_attributes"])
+                ),
+                "Equipment": _equipment_list_from_saved(
+                    saved, r.get("default_equipment", "")
+                ),
+                "M Skills": saved.get("M Skills", int(r["default_m_skill"])),
+                "Test Time (min)": saved.get(
+                    "Test Time (min)", saved.get("Test Distance", 5.0)
+                ),
+                "Typical ALS Equipment": r["typical_als_equipment"],
+            })
+
+        scenario_df = pd.DataFrame(rows)
+
+        edited = scenario_df
+        if not scenario_df.empty:
+            with st.expander("Unit configuration", expanded=True):
+                edited = st.data_editor(
+                    scenario_df,
+                    hide_index=True,
+                    use_container_width=True,
+                    disabled=["Unit ID", "Unit Type", "Typical ALS Equipment"],
+                    column_config={
+                        "Beat": st.column_config.SelectboxColumn(
+                            "Beat",
+                            options=BEAT_OPTIONS,
+                            help="Select one current beat for the unit.",
+                        ),
+                        "Station": st.column_config.SelectboxColumn(
+                            "Station",
+                            options=STATION_OPTIONS,
+                            help="Select one current station for the unit.",
+                        ),
+                        "Attributes": st.column_config.MultiselectColumn(
+                            "Attributes",
+                            options=ATTRIBUTE_OPTIONS,
+                            accept_new_options=True,
+                            help="Select one or more unit attributes.",
+                            width="large",
+                        ),
+                        "Equipment": st.column_config.MultiselectColumn(
+                            "Equipment",
+                            options=EQUIPMENT_OPTIONS,
+                            accept_new_options=True,
+                            help="Select one or more equipment codes.",
+                            width="large",
+                        ),
+                        "M Skills": st.column_config.SelectboxColumn(
+                            "M Skills",
+                            options=[0, 1, 2, 3, 4],
+                            help="Rostered personnel with personnel skill M.",
+                        ),
+                        "Test Time (min)": st.column_config.NumberColumn(
+                            "Test Time (min)",
+                            min_value=0.0,
+                            step=0.1,
+                            help="Manual-mode stand-in for CAD travel time.",
+                        ),
+                        "Typical ALS Equipment": st.column_config.TextColumn(
+                            "Typical ALS Equipment",
+                            help="Reference only.",
+                        ),
+                    },
+                    key="scenario_editor_v061",
+                )
+
+            for _, row in edited.iterrows():
+                equipment = row.get("Equipment", [])
+                if not isinstance(equipment, list):
+                    equipment = [] if pd.isna(equipment) else [str(equipment)]
+                attributes = row.get("Attributes", [])
+                if not isinstance(attributes, list):
+                    attributes = [] if pd.isna(attributes) else [str(attributes)]
+
+                st.session_state.scenario_overrides[str(row["Unit ID"])] = {
+                    "Beat": str(row["Beat"]),
+                    "Station": str(row["Station"]),
+                    "Attributes": attributes,
+                    "Equipment": equipment,
+                    "M Skills": int(row["M Skills"]),
+                    "Test Time (min)": float(row["Test Time (min)"]),
+                }
+
+            m_suffix_missing_afr = []
+            for _, row in edited.iterrows():
+                uid = str(row["Unit ID"])
+                typical = str(row.get("Typical ALS Equipment", ""))
+                equipment = row.get("Equipment", [])
+                if not isinstance(equipment, list):
+                    equipment = [] if pd.isna(equipment) else [str(equipment)]
+                if (
+                    typical in {"AFR1", "AFR2", "AFR1 or AFR2"}
+                    and not ({"AFR1", "AFR2"} & set(equipment))
+                ):
+                    m_suffix_missing_afr.append(uid)
+
+            if m_suffix_missing_afr:
+                st.warning(
+                    "Missing AFR equipment assignment: "
+                    + ", ".join(m_suffix_missing_afr)
+                )
+
+            conflicts = pair_conflicts(edited)
+            if conflicts:
+                pairs = ", ".join(f"{a} + {b}" for a, b in conflicts)
+                st.warning("Base/M operational conflict: " + pairs)
+
+        map_scope = "Dispatched units only"
+        map_extra_units = []
         if routing_mode == "OpenStreetMap / OSRM":
-            incident_mode = st.radio(
-                "Incident Location Input",
-                ["Street Address", "Latitude / Longitude"],
-                horizontal=True,
-            )
-            if incident_mode == "Street Address":
-                incident_address = st.text_input(
-                    "Incident address",
-                    placeholder="Example: 12000 Government Center Pkwy, Fairfax, VA 22035",
-                    label_visibility="collapsed",
+            with st.expander("Map display", expanded=False):
+                map_scope = st.radio(
+                    "Routes shown",
+                    [
+                        "Dispatched units only",
+                        "Dispatched + selected in-service units",
+                        "All in-service units",
+                    ],
+                    index=0,
                 )
-            else:
-                lat_c, lon_c = st.columns(2)
-                with lat_c:
-                    incident_lat = st.number_input(
-                        "Latitude",
-                        min_value=-90.0,
-                        max_value=90.0,
-                        value=38.8500,
-                        format="%.6f",
+                if map_scope == "Dispatched + selected in-service units":
+                    map_extra_units = st.multiselect(
+                        "Additional units",
+                        options=selected_ids,
+                        default=[],
                     )
-                with lon_c:
-                    incident_lon = st.number_input(
-                        "Longitude",
-                        min_value=-180.0,
-                        max_value=180.0,
-                        value=-77.3000,
-                        format="%.6f",
-                    )
-        else:
-            st.info(
-                "Manual Test Time mode does not require an incident location. "
-                "Enter the test time for each unit in the scenario editor below."
-            )
 
-    st.divider()
-
-    _section_header(
-        "Resources",
-        "Units in service",
-        "Select the available resources for this scenario. Unit ID and Unit Type remain locked.",
-    )
-
-    selected_ids = st.multiselect(
-        "Units in service",
-        options=catalog["unit_id"].tolist(),
-        default=default_units,
-        help="Search by Unit ID. Only selected units participate in the simulation.",
-    )
-
-    selected = catalog[catalog["unit_id"].isin(selected_ids)].copy().sort_values("unit_id")
-
-    summary_c1, summary_c2, summary_c3 = st.columns(3)
-    summary_c1.metric("Units in service", len(selected_ids))
-    summary_c2.metric(
-        "Stations represented",
-        selected["station_id"].replace("", pd.NA).dropna().nunique() if not selected.empty else 0,
-    )
-    summary_c3.metric(
-        "Routing",
-        "OSM / OSRM" if routing_mode == "OpenStreetMap / OSRM" else "Manual time",
-    )
-
-    rows = []
-    for _, r in selected.iterrows():
-        uid = r["unit_id"]
-        saved = st.session_state.scenario_overrides.get(uid, {})
-        rows.append({
-            "Unit ID": uid,
-            "Unit Type": r["unit_type"],
-            "Beat": saved.get("Beat", r["beat"]),
-            "Station": saved.get("Station", r["station_id"]),
-            "Attributes": _attribute_list_from_value(
-                saved.get("Attributes", r["default_attributes"])
-            ),
-            "Equipment": _equipment_list_from_saved(
-                saved, r.get("default_equipment", "")
-            ),
-            "M Skills": saved.get("M Skills", int(r["default_m_skill"])),
-            "Test Time (min)": saved.get(
-                "Test Time (min)", saved.get("Test Distance", 5.0)
-            ),
-            "Typical ALS Equipment": r["typical_als_equipment"],
-        })
-
-    scenario_df = pd.DataFrame(rows)
-
-    edited = scenario_df
-    if not scenario_df.empty:
-        with st.expander("Edit unit scenario", expanded=True):
-            st.caption(
-                "Beat and Station are single-select. Attributes and Equipment allow multiple values. "
-                "Manual Test Time is ignored when OSM routing is active."
-            )
-            edited = st.data_editor(
-                scenario_df,
-                hide_index=True,
-                use_container_width=True,
-                disabled=["Unit ID", "Unit Type", "Typical ALS Equipment"],
-                column_config={
-                    "Beat": st.column_config.SelectboxColumn(
-                        "Beat",
-                        options=BEAT_OPTIONS,
-                        help="Select one current beat for the unit.",
-                    ),
-                    "Station": st.column_config.SelectboxColumn(
-                        "Station",
-                        options=STATION_OPTIONS,
-                        help="Select one current station for the unit.",
-                    ),
-                    "Attributes": st.column_config.MultiselectColumn(
-                        "Attributes",
-                        options=ATTRIBUTE_OPTIONS,
-                        accept_new_options=True,
-                        help="Select one or more unit attributes.",
-                        width="large",
-                    ),
-                    "Equipment": st.column_config.MultiselectColumn(
-                        "Equipment",
-                        options=EQUIPMENT_OPTIONS,
-                        accept_new_options=True,
-                        help="Select one or more equipment codes.",
-                        width="large",
-                    ),
-                    "M Skills": st.column_config.SelectboxColumn(
-                        "M Skills",
-                        options=[0, 1, 2, 3, 4],
-                        help="Rostered personnel with personnel skill M.",
-                    ),
-                    "Test Time (min)": st.column_config.NumberColumn(
-                        "Test Time (min)",
-                        min_value=0.0,
-                        step=0.1,
-                        help="Manual-mode stand-in for CAD travel time.",
-                    ),
-                    "Typical ALS Equipment": st.column_config.TextColumn(
-                        "Typical ALS Equipment",
-                        help="Reference only.",
-                    ),
-                },
-                key="scenario_editor_v060",
-            )
-
-        for _, row in edited.iterrows():
-            equipment = row.get("Equipment", [])
-            if not isinstance(equipment, list):
-                equipment = [] if pd.isna(equipment) else [str(equipment)]
-            attributes = row.get("Attributes", [])
-            if not isinstance(attributes, list):
-                attributes = [] if pd.isna(attributes) else [str(attributes)]
-
-            st.session_state.scenario_overrides[str(row["Unit ID"])] = {
-                "Beat": str(row["Beat"]),
-                "Station": str(row["Station"]),
-                "Attributes": attributes,
-                "Equipment": equipment,
-                "M Skills": int(row["M Skills"]),
-                "Test Time (min)": float(row["Test Time (min)"]),
-            }
-
-        m_suffix_missing_afr = []
-        for _, row in edited.iterrows():
-            uid = str(row["Unit ID"])
-            typical = str(row.get("Typical ALS Equipment", ""))
-            equipment = row.get("Equipment", [])
-            if not isinstance(equipment, list):
-                equipment = [] if pd.isna(equipment) else [str(equipment)]
-            if (
-                typical in {"AFR1", "AFR2", "AFR1 or AFR2"}
-                and not ({"AFR1", "AFR2"} & set(equipment))
-            ):
-                m_suffix_missing_afr.append(uid)
-
-        if m_suffix_missing_afr:
-            st.warning(
-                "Missing AFR equipment assignment: "
-                + ", ".join(m_suffix_missing_afr)
-                + ". Add AFR1 or AFR2 before testing ALS/AFR logic."
-            )
-
-        conflicts = pair_conflicts(edited)
-        if conflicts:
-            pairs = ", ".join(f"{a} + {b}" for a, b in conflicts)
-            st.warning(
-                "Base/M operational conflict: "
-                + pairs
-                + ". Normal operations use one member of each pair."
-            )
-
-    map_scope = "Dispatched units only"
-    map_extra_units = []
-    if routing_mode == "OpenStreetMap / OSRM":
-        with st.expander("Map display options", expanded=False):
-            map_scope = st.radio(
-                "Routes shown on map",
-                [
-                    "Dispatched units only",
-                    "Dispatched + selected in-service units",
-                    "All in-service units",
-                ],
-                index=0,
-                help="Dispatched units only is recommended for large regional scenarios.",
-            )
-            if map_scope == "Dispatched + selected in-service units":
-                map_extra_units = st.multiselect(
-                    "Additional units to display",
-                    options=selected_ids,
-                    default=[],
-                )
-
-    st.divider()
+    st.write("")
 
     run_disabled = scenario_df.empty
     if run_disabled:
@@ -1009,48 +1094,49 @@ with simulator_tab:
                 ordered_assignments = assignments_in_dispatch_order(state)
                 result_rows = _result_table(state, routed_frame)
 
-                st.markdown("---")
-                _section_header(
-                    "Simulation result",
-                    "Dispatch recommendation",
-                    "Displayed in response-plan dispatch order. ETA does not control the displayed order.",
-                )
-
-                result_c1, result_c2, result_c3, result_c4 = st.columns(4)
-                result_c1.metric("Event Type", event_type)
-                result_c2.metric("Response Plan", response_plan_id)
-                result_c3.metric("Dispatched Units", len(ordered_assignments))
-                result_c4.metric("Condition", f"{condition_id}")
-
-                st.markdown(
-                    '<span class="status-chip">Simulation complete</span>',
-                    unsafe_allow_html=True,
-                )
                 st.write("")
-
-                if result_rows:
-                    result_df = pd.DataFrame(result_rows)
-                    st.dataframe(
-                        result_df,
-                        hide_index=True,
-                        use_container_width=True,
-                        column_config={
-                            "Dispatch Order": st.column_config.NumberColumn(
-                                "Order", width="small"
-                            ),
-                            "Unit": st.column_config.TextColumn(
-                                "Unit", width="medium"
-                            ),
-                            "Requirement": st.column_config.TextColumn(
-                                "Requirement", width="medium"
-                            ),
-                            "Road Distance (mi)": st.column_config.NumberColumn(
-                                "Road mi", format="%.2f"
-                            ),
-                        },
+                with st.container(border=True):
+                    _section_header(
+                        "Simulation result",
+                        "Dispatch recommendation",
+                        "Displayed in response-plan dispatch order. ETA does not control the displayed order.",
                     )
-                else:
-                    st.info("No resources were recommended from the current scenario.")
+
+                    result_c1, result_c2, result_c3, result_c4 = st.columns(4)
+                    result_c1.metric("Event Type", event_type)
+                    result_c2.metric("Response Plan", response_plan_id)
+                    result_c3.metric("Dispatched Units", len(ordered_assignments))
+                    result_c4.metric("Condition", f"{condition_id}")
+
+                    st.markdown(
+                        '<span class="status-chip">Simulation complete</span>',
+                        unsafe_allow_html=True,
+                    )
+                    st.write("")
+
+                    if result_rows:
+                        result_df = pd.DataFrame(result_rows)
+                        st.dataframe(
+                            result_df,
+                            hide_index=True,
+                            use_container_width=True,
+                            column_config={
+                                "Dispatch Order": st.column_config.NumberColumn(
+                                    "Order", width="small"
+                                ),
+                                "Unit": st.column_config.TextColumn(
+                                    "Unit", width="medium"
+                                ),
+                                "Requirement": st.column_config.TextColumn(
+                                    "Requirement", width="medium"
+                                ),
+                                "Road Distance (mi)": st.column_config.NumberColumn(
+                                    "Road mi", format="%.2f"
+                                ),
+                            },
+                        )
+                    else:
+                        st.info("No resources were recommended from the current scenario.")
 
                 if routing_mode == "OpenStreetMap / OSRM" and route_map_rows:
                     dispatched_ids = [a.unit_id for a in ordered_assignments]
@@ -1066,16 +1152,17 @@ with simulator_tab:
                     )
 
                     st.write("")
-                    _section_header(
-                        "Map",
-                        "Dispatched routes",
-                        "Circular markers identify station origins; the red star identifies the incident.",
-                    )
-                    deck = _route_map(visible_route_rows, incident_point)
-                    if deck is not None:
-                        st.pydeck_chart(deck, use_container_width=True, height=620)
-                    else:
-                        st.info("No route geometry is available for the selected map filter.")
+                    with st.container(border=True):
+                        _section_header(
+                            "Map",
+                            "Dispatched routes",
+                            "Circular markers identify station origins; the red star marks the incident location.",
+                        )
+                        deck = _route_map(visible_route_rows, incident_point)
+                        if deck is not None:
+                            st.pydeck_chart(deck, use_container_width=True, height=620)
+                        else:
+                            st.info("No route geometry is available for the selected map filter.")
 
                 with st.expander("Technical details", expanded=False):
                     tech_tabs = st.tabs(
@@ -1134,24 +1221,36 @@ with simulator_tab:
 
 with station_tab:
     _section_header(
-        "Reference data",
-        "Regional station directory",
-        "Three-digit CAD station IDs provide the jurisdiction-safe routing crosswalk.",
+        "Stations",
+        "Regional station availability",
+        "Turn stations on or off for routing scenarios. Changes apply to the current app session.",
     )
 
-    station_metrics = st.columns(3)
-    station_metrics[0].metric("Active stations", int(stations["active"].sum()))
+    effective_stations = _effective_stations()
+
+    station_metrics = st.columns(2)
+    station_metrics[0].metric("Active stations", int(effective_stations["active"].sum()))
     station_metrics[1].metric(
-        "Jurisdictions", stations["jurisdiction"].replace("", pd.NA).dropna().nunique()
+        "Jurisdictions",
+        effective_stations["jurisdiction"].replace("", pd.NA).dropna().nunique(),
     )
-    station_metrics[2].metric("Directory rows", len(stations))
 
-    station_search = st.text_input(
-        "Search station ID, jurisdiction, name, or address",
-        "",
-        key="station_search_v060",
-    )
-    station_view = stations.copy()
+    search_c, reset_c = st.columns([3.0, 1.0], gap="large")
+    with search_c:
+        station_search = st.text_input(
+            "Search station ID, jurisdiction, name, or address",
+            "",
+            key="station_search_v061",
+        )
+    with reset_c:
+        st.write("")
+        st.write("")
+        if st.button("Restore station defaults", use_container_width=True):
+            st.session_state.station_active_overrides = {}
+            st.session_state.pop("station_editor_v061", None)
+            st.rerun()
+
+    station_view = effective_stations.copy()
     if station_search.strip():
         s = station_search.strip().lower()
         mask = (
@@ -1169,15 +1268,44 @@ with station_tab:
         "station_name": "Station Name",
         "address": "Routing Address",
         "active": "Active",
-        "notes": "Notes",
-        "source_url": "Source",
     })[
         [
-            "CAD Station ID", "Jurisdiction", "Local Station",
-            "Station Name", "Routing Address", "Active", "Notes", "Source"
+            "Active", "CAD Station ID", "Jurisdiction", "Local Station",
+            "Station Name", "Routing Address"
         ]
     ]
-    st.dataframe(display_stations, hide_index=True, use_container_width=True)
+
+    st.caption("Uncheck **Active** to exclude a station and its assigned units from OSM routing.")
+
+    edited_stations = st.data_editor(
+        display_stations,
+        hide_index=True,
+        use_container_width=True,
+        disabled=[
+            "CAD Station ID",
+            "Jurisdiction",
+            "Local Station",
+            "Station Name",
+            "Routing Address",
+        ],
+        column_config={
+            "Active": st.column_config.CheckboxColumn(
+                "Active",
+                help="Enabled stations may be used as routing origins.",
+                width="small",
+            ),
+            "CAD Station ID": st.column_config.TextColumn("Station", width="small"),
+            "Jurisdiction": st.column_config.TextColumn("Jurisdiction", width="medium"),
+            "Local Station": st.column_config.TextColumn("Local", width="small"),
+            "Station Name": st.column_config.TextColumn("Station Name", width="medium"),
+            "Routing Address": st.column_config.TextColumn("Routing Address", width="large"),
+        },
+        key="station_editor_v061",
+    )
+
+    for _, row in edited_stations.iterrows():
+        sid = str(row["CAD Station ID"])
+        st.session_state.station_active_overrides[sid] = bool(row["Active"])
 
 
 with unit_tab:
@@ -1300,6 +1428,6 @@ with config_tab:
 
 st.divider()
 st.caption(
-    "Prototype only · No connection to production I/CAD · "
+    "Simulation environment · No connection to production I/CAD · "
     "OpenStreetMap data © OpenStreetMap contributors · Routing via OSRM"
 )
