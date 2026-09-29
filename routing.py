@@ -187,6 +187,44 @@ def route_pair(
     )
 
 
+
+def _parse_route_geometry_response(payload: dict) -> dict | None:
+    """Parse one OSRM route with GeoJSON geometry."""
+    if payload.get("code") != "Ok" or not payload.get("routes"):
+        return None
+
+    route = payload["routes"][0]
+    geometry = route.get("geometry") or {}
+    coordinates = geometry.get("coordinates") or []
+    if len(coordinates) < 2:
+        return None
+
+    return {
+        "path": [[float(lon), float(lat)] for lon, lat in coordinates],
+        "distance_miles": float(route["distance"]) / _METERS_PER_MILE,
+        "duration_seconds": float(route["duration"]),
+    }
+
+
+def route_geometry(
+    origin: GeoPoint,
+    destination: GeoPoint,
+    timeout: float = 25.0,
+) -> dict | None:
+    """Return the actual OSRM route polyline as GeoJSON coordinates."""
+    response = requests.get(
+        f"{OSRM_ROUTE_URL}/{_coord_string([origin, destination])}",
+        params={
+            "overview": "full",
+            "steps": "false",
+            "geometries": "geojson",
+        },
+        headers={"User-Agent": USER_AGENT},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return _parse_route_geometry_response(response.json())
+
 def format_duration(seconds: float | None) -> str:
     if seconds is None or (isinstance(seconds, float) and math.isnan(seconds)):
         return ""

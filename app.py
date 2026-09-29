@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import pandas as pd
+import pydeck as pdk
 import streamlit as st
 
 from catalog import load_catalog
@@ -18,12 +20,13 @@ from routing import (
     geocode_address,
     parse_lat_lon,
     route_table,
+    route_geometry,
     format_duration,
     RoutingError,
 )
 
-st.set_page_config(page_title="CAD Response Designer v0.5.1", layout="wide")
-st.title("CAD Response Designer — Prototype v0.5.1")
+st.set_page_config(page_title="CAD Response Designer v0.5.2", layout="wide")
+st.title("CAD Response Designer — Prototype v0.5.2")
 st.caption(
     "Current ALPHA response-plan model with the complete CADDBM unit catalog "
     "and an editable operational test scenario."
@@ -172,13 +175,43 @@ def _cached_route_table(origin_payload, destination_payload):
     ]
 
 
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _cached_route_geometry(origin_payload, destination_payload):
+    from routing import GeoPoint
+    origin = GeoPoint(
+        lat=float(origin_payload[0]),
+        lon=float(origin_payload[1]),
+        label=str(origin_payload[2]),
+    )
+    destination = GeoPoint(
+        lat=float(destination_payload[0]),
+        lon=float(destination_payload[1]),
+        label=str(destination_payload[2]),
+    )
+    return route_geometry(origin, destination)
+
+
+ROUTE_COLORS = [
+    [0, 114, 178, 220],
+    [213, 94, 0, 220],
+    [0, 158, 115, 220],
+    [204, 121, 167, 220],
+    [230, 159, 0, 220],
+    [86, 180, 233, 220],
+    [240, 228, 66, 220],
+    [128, 64, 0, 220],
+    [106, 61, 154, 220],
+    [0, 0, 0, 220],
+]
+
+
 def _point_from_cached(payload):
     from routing import GeoPoint
     return GeoPoint(lat=float(payload["lat"]), lon=float(payload["lon"]), label=str(payload["label"]))
 
 
 def _routing_dataframe(edited: pd.DataFrame, incident_point):
-    """Resolve unique station origins and calculate network metrics."""
+    """Resolve station origins, calculate metrics, and retrieve actual route geometry."""
     unique_station_ids = list(dict.fromkeys(str(x) for x in edited["Station"].tolist()))
     station_points = {}
     station_meta = {}
@@ -222,6 +255,24 @@ def _routing_dataframe(edited: pd.DataFrame, incident_point):
         else:
             metrics_by_station[sid] = raw
 
+    # Geometry requires one OSRM route request per unique station origin.
+    # Results are cached so repeated scenarios do not repeatedly request the same route.
+    geometry_by_station = {}
+    destination_payload = (incident_point.lat, incident_point.lon, incident_point.label)
+    for sid in ordered_ids:
+        if sid not in metrics_by_station:
+            continue
+        point = station_points[sid]
+        origin_payload_one = (point.lat, point.lon, point.label)
+        try:
+            geometry = _cached_route_geometry(origin_payload_one, destination_payload)
+            if geometry and geometry.get("path"):
+                geometry_by_station[sid] = geometry
+            else:
+                failures.append((sid, "Route metrics available but route geometry was unavailable"))
+        except Exception as exc:
+            failures.append((sid, f"Route geometry: {exc}"))
+
     routed = edited.copy()
     routed["Routing Mode"] = "osm"
     routed["Route Distance Miles"] = pd.NA
@@ -235,10 +286,16 @@ def _routing_dataframe(edited: pd.DataFrame, incident_point):
             routed.at[idx, "Route Time Seconds"] = float(metric["duration_seconds"])
 
     route_rows = []
-    for sid, metric in metrics_by_station.items():
+    route_map_rows = []
+    for color_index, sid in enumerate(sorted(metrics_by_station)):
+        metric = metrics_by_station[sid]
         rec = station_meta[sid]
-        units_here = edited.loc[edited["Station"].astype(str) == sid, "Unit ID"].astype(str).tolist()
+        units_here = edited.loc[
+            edited["Station"].astype(str) == sid, "Unit ID"
+        ].astype(str).tolist()
         point = station_points[sid]
+        color = ROUTE_COLORS[color_index % len(ROUTE_COLORS)]
+
         route_rows.append({
             "Station": sid,
             "Station Name": rec.get("station_name", ""),
@@ -249,14 +306,161 @@ def _routing_dataframe(edited: pd.DataFrame, incident_point):
             "Travel Time (sec)": float(metric["duration_seconds"]),
             "Latitude": point.lat,
             "Longitude": point.lon,
+            "Route Color": f"rgb({color[0]}, {color[1]}, {color[2]})",
         })
+
+        geometry = geometry_by_station.get(sid)
+        if geometry:
+            route_map_rows.append({
+                "station": sid,
+                "station_name": rec.get("station_name", ""),
+                "jurisdiction": rec.get("jurisdiction", ""),
+                "units": ", ".join(units_here),
+                "label": f"Station {sid} | {', '.join(units_here)}",
+                "path": geometry["path"],
+                "color": color,
+                "position": [point.lon, point.lat],
+                "distance": round(float(metric["distance_miles"]), 2),
+                "eta": format_duration(float(metric["duration_seconds"])),
+            })
 
     route_df = pd.DataFrame(route_rows)
     if not route_df.empty:
         # Diagnostic routing table only. Do not present ETA order as dispatch order.
         route_df = route_df.sort_values(["Station"])
 
-    return routed, route_df, failures
+    return routed, route_df, route_map_rows, failures
+
+
+def _map_view_state(route_map_rows, incident_point):
+    coords = [[incident_point.lon, incident_point.lat]]
+    for row in route_map_rows:
+        coords.extend(row["path"])
+
+    lons = [p[0] for p in coords]
+    lats = [p[1] for p in coords]
+    center_lon = (min(lons) + max(lons)) / 2
+    center_lat = (min(lats) + max(lats)) / 2
+
+    span = max(max(lons) - min(lons), max(lats) - min(lats), 0.002)
+    # Simple viewport approximation that works well across the regional scale.
+    zoom = max(7.0, min(15.5, 10.8 - math.log2(span / 0.08)))
+
+    return pdk.ViewState(
+        latitude=center_lat,
+        longitude=center_lon,
+        zoom=zoom,
+        pitch=0,
+        bearing=0,
+    )
+
+
+def _route_map(route_map_rows, incident_point):
+    if not route_map_rows:
+        return None
+
+    path_layer = pdk.Layer(
+        "PathLayer",
+        data=route_map_rows,
+        get_path="path",
+        get_color="color",
+        width_scale=1,
+        get_width=5,
+        width_min_pixels=3,
+        width_max_pixels=8,
+        pickable=True,
+        auto_highlight=True,
+    )
+
+    # Station markers use the same color as their route.
+    station_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=route_map_rows,
+        get_position="position",
+        get_fill_color="color",
+        get_line_color=[255, 255, 255, 255],
+        get_radius=70,
+        radius_min_pixels=7,
+        radius_max_pixels=12,
+        line_width_min_pixels=2,
+        stroked=True,
+        filled=True,
+        pickable=True,
+    )
+
+    station_label_layer = pdk.Layer(
+        "TextLayer",
+        data=route_map_rows,
+        get_position="position",
+        get_text="label",
+        get_color=[20, 20, 20, 255],
+        get_size=13,
+        get_pixel_offset=[0, -18],
+        get_text_anchor='"middle"',
+        get_alignment_baseline='"bottom"',
+        billboard=True,
+        pickable=False,
+    )
+
+    incident_data = [{
+        "position": [incident_point.lon, incident_point.lat],
+        "symbol": "★",
+        "label": "INCIDENT",
+        "location": incident_point.label,
+    }]
+
+    # The incident uses a star symbol, clearly different from circular station markers.
+    incident_icon_layer = pdk.Layer(
+        "TextLayer",
+        data=incident_data,
+        get_position="position",
+        get_text="symbol",
+        get_color=[190, 0, 0, 255],
+        get_size=34,
+        get_text_anchor='"middle"',
+        get_alignment_baseline='"center"',
+        billboard=True,
+        pickable=True,
+    )
+
+    incident_label_layer = pdk.Layer(
+        "TextLayer",
+        data=incident_data,
+        get_position="position",
+        get_text="label",
+        get_color=[140, 0, 0, 255],
+        get_size=14,
+        get_pixel_offset=[0, -24],
+        get_text_anchor='"middle"',
+        get_alignment_baseline='"bottom"',
+        billboard=True,
+        pickable=False,
+    )
+
+    return pdk.Deck(
+        map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+        initial_view_state=_map_view_state(route_map_rows, incident_point),
+        layers=[
+            path_layer,
+            station_layer,
+            station_label_layer,
+            incident_icon_layer,
+            incident_label_layer,
+        ],
+        tooltip={
+            "html": (
+                "<b>Station {station}</b><br/>"
+                "{station_name}<br/>"
+                "<b>Units:</b> {units}<br/>"
+                "<b>Distance:</b> {distance} mi<br/>"
+                "<b>ETA:</b> {eta}"
+            ),
+            "style": {
+                "backgroundColor": "rgba(30, 30, 30, 0.92)",
+                "color": "white",
+            },
+        },
+    )
 
 
 def _result_table(state, routed_frame: pd.DataFrame | None = None):
@@ -482,6 +686,7 @@ with scenario_tab:
         if st.button(button_label, type="primary"):
             routed_frame = None
             route_df = None
+            route_map_rows = []
 
             if routing_mode == "OpenStreetMap / OSRM":
                 try:
@@ -493,7 +698,7 @@ with scenario_tab:
                         incident_point = parse_lat_lon(incident_lat, incident_lon)
 
                     with st.spinner("Calculating OpenStreetMap road-network routes..."):
-                        routed_frame, route_df, route_failures = _routing_dataframe(
+                        routed_frame, route_df, route_map_rows, route_failures = _routing_dataframe(
                             edited, incident_point
                         )
 
@@ -519,15 +724,17 @@ with scenario_tab:
                             use_container_width=True,
                         )
 
-                        map_rows = route_df[["Latitude", "Longitude"]].rename(
-                            columns={"Latitude": "lat", "Longitude": "lon"}
-                        ).copy()
-                        incident_row = pd.DataFrame([{
-                            "lat": incident_point.lat,
-                            "lon": incident_point.lon,
-                        }])
-                        with st.expander("Show routing points"):
-                            st.map(pd.concat([incident_row, map_rows], ignore_index=True))
+                        deck = _route_map(route_map_rows, incident_point)
+                        if deck is not None:
+                            st.markdown("#### Route map")
+                            st.caption(
+                                "Each colored line is the actual OSRM road route from a unit's current "
+                                "station to the incident. Units sharing a station share the same route. "
+                                "Circular markers identify stations; the star identifies the incident."
+                            )
+                            st.pydeck_chart(deck, use_container_width=True, height=600)
+                        else:
+                            st.info("Route metrics were available, but no route geometry could be displayed.")
 
                     units = scenario_units_from_frame(routed_frame)
                 except Exception as exc:
@@ -557,7 +764,7 @@ with scenario_tab:
     else:
         st.info("Select at least one unit to build a scenario.")
 
-    with st.expander("Current ALPHA flow modeled in v0.5.1"):
+    with st.expander("Current ALPHA flow modeled in v0.5.2"):
         for n in sorted(ALPHA_STEPS):
             s = ALPHA_STEPS[n]
             if s.kind == "GROUP":
@@ -573,7 +780,8 @@ with scenario_tab:
             st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
 
     st.info(
-        "OpenStreetMap / OSRM mode ranks eligible candidates by estimated road-network travel time. "
+        "OpenStreetMap / OSRM mode calculates and displays actual road-network routes and ranks "
+        "eligible candidates by estimated travel time. "
         "ALPHA's CAD Max Distance 10 setting is treated as a 10-minute travel-time threshold. "
         "Manual Test Time remains available as a diagnostic fallback. OSM/OSRM results are an independent routing "
         "model and are not expected to exactly reproduce Hexagon routing."
