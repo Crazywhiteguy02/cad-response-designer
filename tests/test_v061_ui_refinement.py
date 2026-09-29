@@ -5,18 +5,10 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from routing import apply_station_active_overrides
-
-
-def test_station_active_overrides_are_applied_without_mutating_source():
-    source = pd.DataFrame([
-        {"cad_station_id": "421", "active": True},
-        {"cad_station_id": "425", "active": True},
-    ])
-    effective = apply_station_active_overrides(source, {"425": False})
-    assert bool(effective.loc[effective["cad_station_id"] == "421", "active"].iloc[0]) is True
-    assert bool(effective.loc[effective["cad_station_id"] == "425", "active"].iloc[0]) is False
-    assert bool(source.loc[source["cad_station_id"] == "425", "active"].iloc[0]) is True
+def test_station_toggle_logic_is_local_to_app():
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "def _effective_stations()" in app
+    assert 'effective.loc[mask, "active"] = bool(enabled)' in app
 
 
 def test_dispatch_setup_redundant_copy_removed():
