@@ -25,7 +25,7 @@ def make_unit(uid, typ, attrs=(), equipment=(), m=0, distance=5, beat="421", sta
         attributes=set(attrs),
         equipment={x: 1 for x in equipment},
         m_skill_count=m,
-        test_distance=float(distance),
+        test_time_minutes=float(distance),
     )
 
 
@@ -100,7 +100,7 @@ def test_alpha_current_logic_with_als_chase_car_branch():
 
 
 def test_alpha_initial_max_distance_fallback():
-    # M is outside max distance, so step 1 fails. ALS401 wins fallback by distance.
+    # M is outside the 10-minute threshold, so step 1 fails. ALS401 wins fallback by test time.
     # M Recommended? remains NO; the M/A group then selects the closer A421.
     units = [
         make_unit("M421", "M", attrs=["TRANSPORT", "MEDIC"], m=1, distance=15),
@@ -113,7 +113,7 @@ def test_alpha_initial_max_distance_fallback():
     assert got[0] == ("ALS CHASE CAR", "ALS401")
     assert got[1] == ("A", "A421")
     trace = "\n".join(state.trace)
-    assert "M: no eligible unconsumed unit within max distance 10" in trace
+    assert "M: no eligible unconsumed unit within 10-minute threshold" in trace
     assert "CONDITION M: NO" in trace
     assert "CONDITION CHASE CAR: YES" in trace
 
