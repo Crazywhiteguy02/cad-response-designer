@@ -55,5 +55,5 @@ def test_gui_manual_mode_is_named_test_time_not_distance():
 
 def test_gui_preserves_dispatch_order_language():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert "Displayed in response-plan dispatch order" in app
-    assert "ETA does not control the displayed order" in app
+    assert "Response-plan dispatch order" in app
+    assert "assignments_in_dispatch_order" in app
