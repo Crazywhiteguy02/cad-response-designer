@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_v080_uses_cadence_dashboard_shell():
     app=(ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'page_title="CADence v0.9.0"' in app
+    assert 'page_title="CADence v0.10.0"' in app
     assert '"Dashboard",' in app
     assert '"Response Plans",' in app
     assert '"Scenarios",' in app

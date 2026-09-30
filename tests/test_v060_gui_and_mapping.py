@@ -55,5 +55,5 @@ def test_gui_manual_mode_is_named_test_time_not_distance():
 
 def test_gui_preserves_dispatch_order_language():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert "Response-plan dispatch order" in app
+    assert "Initial response plus any additional alarm or Ad Hoc plans" in app
     assert "assignments_in_dispatch_order" in app

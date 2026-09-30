@@ -1,4 +1,4 @@
-# CADence — Prototype v0.7.1.2
+# CADence — v0.10.0
 
 This version moves the prototype to the current **ALPHA** response plan and imports the complete unit catalog supplied from CADDBM.
 
@@ -449,3 +449,107 @@ than copying the example numbers from the brand board.
 
 Analysis and Reports have application-ready landing screens but their full
 workflows are not yet implemented. No production I/CAD connection is present.
+
+
+## v0.9.1 — Routing resilience hotfix
+
+This release hardens CADence against public geocoder throttling without changing
+the validated ALPHA recommendation logic.
+
+### Stored station coordinates
+
+`station_crosswalk.csv` now supports permanent `latitude`, `longitude`, and
+`coordinate_source` fields. CADence uses those values before attempting any
+external station geocoding. The current Fairfax stations used by the validated
+ALPHA test scenario are seeded in this release, including Station 429.
+
+Station 429 remains the active Tysons Corner station at:
+
+`1560 Spring Hill Road, McLean, VA 22102`
+
+The proposed replacement station is intentionally excluded from active routing
+until it becomes operational.
+
+### Address lookup resilience
+
+Incident-address lookup now follows this order:
+
+1. local seeded address cache;
+2. U.S. Census street-address geocoder;
+3. throttled Nominatim fallback with retry/backoff.
+
+The geocode result cache uses Streamlit disk persistence where available. A
+Nominatim HTTP 429 is no longer exposed directly to the user. If all lookup
+methods fail, CADence displays a concise message and suggests using the full
+street address or switching to coordinate input.
+
+### Current scope
+
+Not every regional station has a permanently seeded coordinate yet. Stations
+without stored coordinates still use the resilient geocoding fallback and are
+cached. Additional station coordinates can be added to the crosswalk
+incrementally without changing the routing engine.
+
+
+## v0.10.0 — Data-driven CAD configuration release
+
+v0.10.0 moves CADence from a primarily hard-coded ALPHA prototype to an imported CAD configuration model.
+
+### Imported CAD data
+
+- 1,014 unique DEFINE REQUIREMENT definitions from 1,015 criteria rows.
+- 348 requirement-to-resource links from `resp_req_res`.
+- 5,394 response plans represented by 36,784 plan-detail rows.
+- 111 response plans flagged as Ad Hoc (`resp_type = 1`).
+- 110 FIRE Event Types with all three Operational Condition response-plan mappings.
+- 93 additional-alarm rows transcribed from the supplied CADDBM alarm-level grids.
+
+### Response-plan engine
+
+The new imported-plan engine supports:
+
+- Requirement Group items (`item_type = 1`).
+- Condition items (`item_type = 2`).
+- Connector / no-action items (`item_type = 0`).
+- Referenced / nested response plans (`item_type = 3`).
+- Yes/No traversal using `success_item_id` and `failure_item_id`.
+- Requirement alternatives ordered by `req_number`.
+- Display Order preservation within each applied plan batch.
+- `req_max_route` as the CAD time threshold used by the current configuration.
+- Recommend Mode values: `1 = Street Network`, `2 = Beats`, `3 = Use Default`.
+  The current CAD default is Street Network, so modes 1 and 3 are operationally equivalent today while remaining semantically distinct.
+
+ALPHA is now executable from the imported raw response-plan and requirement data. The earlier hard-coded ALPHA simulator remains in the codebase only as a regression baseline.
+
+### Post-dispatch incident workflow
+
+The Scenarios workspace now maintains an active incident state after the initial dispatch. The user can:
+
+- apply the next configured additional alarm level;
+- apply any imported Ad Hoc response plan;
+- preserve resources already on the incident;
+- evaluate subsequent plans against the current incident capability state;
+- review an incident history showing which plans were applied;
+- reset the active incident and start a new scenario.
+
+Additional-alarm and Ad Hoc plans are applied as later recommendation batches, so their Display Order values do not reorder resources ahead of the original dispatch.
+
+### Dynamic equipment and personnel capability
+
+Equipment and personnel skill M remain scenario-time operational state rather than permanent unit properties. This matches the clarified CAD workflow:
+
+- equipment is selected by end users when signing units on;
+- personnel skill M depends on current staffing;
+- CADence does not store individual employee identities for response-plan simulation.
+
+### Data-quality boundaries
+
+Unknown unit-attribute bits, unsupported personnel skills other than M, and unmodeled Backup Beat behavior fail explicitly rather than being silently ignored.
+
+The alarm-level screenshots reference `2ND_ALARM_PLUS` and `3RD_ALARM_PLUS` for FBULK. Those response-plan names are not present in the supplied `Response_Plans.xlsx` export. CADence preserves the alarm mapping and disables execution of a missing referenced plan instead of inventing its content.
+
+The additional-alarm table in this release is screenshot-derived. Replace it with the raw CAD alarm-level table when that export becomes available.
+
+### Routing scope
+
+v0.10.0 retains the v0.9.1 routing-resilience changes. Permanent coordinates are present for the validated Fairfax routing set, including active Station 429 at 1560 Spring Hill Road. The full regional permanent-coordinate validation pass remains a separate data-quality task; stations without stored coordinates continue to use the resilient geocoding fallback and cache.

@@ -50,7 +50,7 @@ def test_v090_reorganizes_existing_functionality_into_app_sections():
 
 def test_v090_preserves_simulator_and_station_controls():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert '"Run Dispatch Simulation"' in app
+    assert '"Run Initial Dispatch"' in app
     assert "station_active_overrides" in app
     assert "def _incident_star_polygon" in app
     assert "assignments_in_dispatch_order" in app

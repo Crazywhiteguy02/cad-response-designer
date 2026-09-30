@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import math
+import copy
 import html
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
 from catalog import load_catalog
-from requirements import REQUIREMENTS
-from alpha_plan import ALPHA_STEPS
+from requirements import REQUIREMENTS, load_requirement_source
+from response_plans import (
+    load_response_plan_items,
+    load_response_plan_meta,
+    load_alarm_levels,
+    ad_hoc_plan_names,
+    next_alarm_for_event,
+    plan_flow_rows,
+)
 from event_config import (
     load_event_plan_map,
     operational_conditions,
@@ -17,13 +25,16 @@ from event_config import (
 )
 from engine import (
     scenario_units_from_frame,
-    simulate_alpha,
+    simulate_response_plan,
+    UnsupportedConfigurationError,
+    SimulationState,
     pair_conflicts,
     assignments_in_dispatch_order,
 )
 from routing import (
     load_station_crosswalk,
     station_record,
+    station_point_from_record,
     geocode_address,
     parse_lat_lon,
     route_table,
@@ -33,7 +44,7 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CADence v0.9.0",
+    page_title="CADence v0.10.0",
     page_icon="C",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -865,6 +876,10 @@ st.markdown(
 catalog = load_catalog()
 stations = load_station_crosswalk()
 event_plan_map = load_event_plan_map()
+response_plan_items = load_response_plan_items()
+response_plan_meta = load_response_plan_meta()
+alarm_levels = load_alarm_levels()
+requirement_source, requirement_resources = load_requirement_source()
 
 BEAT_OPTIONS = sorted(
     {str(x).strip() for x in catalog["beat"].tolist() if str(x).strip()}
@@ -969,7 +984,7 @@ with st.sidebar:
         key="cadence_page_v090",
     )
     st.markdown(
-        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.9.0</div>',
+        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.10.0</div>',
         unsafe_allow_html=True,
     )
 
@@ -1047,7 +1062,7 @@ def _effective_stations() -> pd.DataFrame:
     return effective
 
 
-@st.cache_data(ttl=30 * 24 * 3600, show_spinner=False)
+@st.cache_data(ttl=30 * 24 * 3600, persist="disk", show_spinner=False)
 def _cached_geocode(query: str):
     point = geocode_address(query)
     return {"lat": point.lat, "lon": point.lon, "label": point.label}
@@ -1164,17 +1179,23 @@ def _routing_dataframe(edited: pd.DataFrame, incident_point):
         if not bool(rec.get("active", False)):
             failures.append((sid, "Station is marked inactive"))
             continue
-        query = str(rec.get("address", "")).strip()
-        if not query:
-            failures.append((sid, "No routing/geocoding address"))
-            continue
-        try:
-            cached = _cached_geocode(query)
-            point = _point_from_cached(cached)
-            station_points[sid] = point
-            station_meta[sid] = rec
-        except Exception as exc:
-            failures.append((sid, str(exc)))
+        # Prefer permanent station coordinates. Only fall back to geocoding
+        # for stations that have not yet been seeded in the crosswalk.
+        point = station_point_from_record(rec)
+        if point is None:
+            query = str(rec.get("address", "")).strip()
+            if not query:
+                failures.append((sid, "No routing coordinates or geocoding address"))
+                continue
+            try:
+                cached = _cached_geocode(query)
+                point = _point_from_cached(cached)
+            except Exception as exc:
+                failures.append((sid, str(exc)))
+                continue
+
+        station_points[sid] = point
+        station_meta[sid] = rec
 
     if not station_points:
         raise RoutingError("None of the selected unit stations could be resolved for routing.")
@@ -1415,6 +1436,8 @@ def _result_table(state, routed_frame: pd.DataFrame | None = None):
             "Step": a.step,
             "Requirement": a.requirement,
             "Unit": a.unit_id,
+            "Source": getattr(a, "source_kind", "Initial") or "Initial",
+            "Plan": getattr(a, "source_plan", "") or "ALPHA",
         }
         if a.unit_id in by_unit:
             source = by_unit[a.unit_id]
@@ -1459,6 +1482,10 @@ def _render_dispatch_cards(result_rows: list[dict]):
         requirement = html.escape(str(row.get("Requirement", "")))
 
         meta_parts = []
+        if row.get("Source"):
+            source_label = str(row.get("Source", ""))
+            plan_label = str(row.get("Plan", ""))
+            meta_parts.append(html.escape(f"{source_label}: {plan_label}" if plan_label else source_label))
         if row.get("Estimated Travel Time"):
             meta_parts.append(html.escape(str(row["Estimated Travel Time"])))
         if row.get("Road Distance (mi)") not in (None, ""):
@@ -1490,8 +1517,8 @@ if page == "Dashboard":
 
     active_station_count = int(_effective_stations()["active"].sum())
     unit_type_count = catalog["unit_type"].replace("", pd.NA).dropna().nunique()
-    response_plan_count = event_plan_map["response_plan_id"].replace("", pd.NA).dropna().nunique()
-    capability_count = len(ATTRIBUTE_OPTIONS) + 1  # modeled unit attributes + personnel skill M
+    response_plan_count = int(response_plan_meta["resp_plan_name"].nunique())
+    capability_count = len(REQUIREMENTS)
     equipment_count = len(EQUIPMENT_OPTIONS)
 
     st.markdown(
@@ -1502,7 +1529,7 @@ if page == "Dashboard":
             <div>
               <div class="kpi-label">Response Plans</div>
               <div class="kpi-number">{response_plan_count}</div>
-              <div class="kpi-caption">Modeled plans</div>
+              <div class="kpi-caption">Imported from CAD</div>
             </div>
           </div>
           <div class="kpi-card">
@@ -1518,7 +1545,7 @@ if page == "Dashboard":
             <div>
               <div class="kpi-label">Capabilities</div>
               <div class="kpi-number">{capability_count}</div>
-              <div class="kpi-caption">Attributes + personnel skill</div>
+              <div class="kpi-caption">Imported requirements</div>
             </div>
           </div>
           <div class="kpi-card">
@@ -1613,53 +1640,94 @@ if page == "Dashboard":
 
 
 if page == "Response Plans":
-    _workspace_header("Response Plans", "Event types, operational conditions, and their associated CAD response plans.")
+    _workspace_header(
+        "Response Plans",
+        "Imported CAD response plans, event mappings, Ad Hoc availability, and additional-alarm configuration.",
+    )
 
-    plan_count = event_plan_map["response_plan_id"].replace("", pd.NA).dropna().nunique()
-    event_count = event_plan_map["event_type"].replace("", pd.NA).dropna().nunique()
-    condition_count = event_plan_map["operational_condition"].replace("", pd.NA).dropna().nunique()
+    plan_count = int(response_plan_meta["resp_plan_name"].nunique())
+    adhoc_count = int(response_plan_meta["is_ad_hoc"].sum())
+    event_count = int(event_plan_map["event_type"].nunique())
+    mapped_count = int(event_plan_map["response_plan_id"].replace("", pd.NA).dropna().nunique())
 
     st.markdown(
         f"""
         <div class="dashboard-kpis">
-          <div class="kpi-card"><div class="kpi-icon blue">▤</div><div><div class="kpi-label">Response Plans</div><div class="kpi-number">{plan_count}</div><div class="kpi-caption">Modeled</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon cyan">E</div><div><div class="kpi-label">Event Types</div><div class="kpi-number">{event_count}</div><div class="kpi-caption">Mapped</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon navy">3</div><div><div class="kpi-label">Conditions</div><div class="kpi-number">{condition_count}</div><div class="kpi-caption">Operational modes</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon charcoal">✓</div><div><div class="kpi-label">Validated Plan</div><div class="kpi-number">1</div><div class="kpi-caption">ALPHA baseline</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon blue">▤</div><div><div class="kpi-label">Response Plans</div><div class="kpi-number">{plan_count:,}</div><div class="kpi-caption">Imported from CAD</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon cyan">+</div><div><div class="kpi-label">Ad Hoc Plans</div><div class="kpi-number">{adhoc_count:,}</div><div class="kpi-caption">Available post-dispatch</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon navy">E</div><div><div class="kpi-label">FIRE Event Types</div><div class="kpi-number">{event_count:,}</div><div class="kpi-caption">Imported event definitions</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon charcoal">↔</div><div><div class="kpi-label">Mapped Plans</div><div class="kpi-number">{mapped_count:,}</div><div class="kpi-caption">Used by operational conditions</div></div></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.container(border=True):
-        _section_header("Mappings", "Event Type → Response Plan")
+    mapping_tab, library_tab, alarms_tab = st.tabs([
+        "Event Type Mappings",
+        "Plan Library",
+        "Additional Alarms",
+    ])
+
+    with mapping_tab:
         mapping_display = event_plan_map.rename(columns={
             "event_type": "Event Type",
             "description": "Description",
             "operational_condition": "Condition",
             "condition_name": "Condition Name",
             "response_plan_id": "Response Plan",
-        })[
-            ["Condition", "Condition Name", "Event Type", "Description", "Response Plan"]
-        ]
+        })[["Condition", "Condition Name", "Event Type", "Description", "Response Plan"]]
         st.dataframe(mapping_display, hide_index=True, use_container_width=True)
+        st.caption(
+            "The three condition columns are imported from the FIRE Event Type table. Blank response-plan values are preserved as blank rather than inferred."
+        )
 
-    with st.expander("ALPHA Response Plan Flow", expanded=False):
-        for n in sorted(ALPHA_STEPS):
-            s = ALPHA_STEPS[n]
-            if s.kind == "GROUP":
-                detail = " OR ".join(s.alternatives)
-            elif s.requirement:
-                detail = s.requirement
-            else:
-                detail = ""
-            extra = (
-                f" | CAD Max Distance {s.max_time_minutes:g} = "
-                f"{s.max_time_minutes:g} min"
-                if s.max_time_minutes is not None
-                else ""
+    with library_tab:
+        plan_names = sorted(response_plan_meta["resp_plan_name"].astype(str).tolist())
+        default_index = plan_names.index("ALPHA") if "ALPHA" in plan_names else 0
+        selected_plan = st.selectbox(
+            "Response Plan",
+            options=plan_names,
+            index=default_index,
+            key="response_plan_library_v010",
+        )
+        meta_row = response_plan_meta[response_plan_meta["resp_plan_name"] == selected_plan].iloc[0]
+        ad_hoc_label = "Yes" if bool(meta_row["is_ad_hoc"]) else "No"
+        st.markdown(
+            f"""
+            <div class="result-summary">
+              <span class="summary-pill">Plan <strong>{html.escape(selected_plan)}</strong></span>
+              <span class="summary-pill">Ad Hoc <strong>{ad_hoc_label}</strong></span>
+              <span class="summary-pill">Items <strong>{int(float(meta_row['unique_items']))}</strong></span>
+              <span class="summary-pill">Raw rows <strong>{int(float(meta_row['item_rows']))}</strong></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        try:
+            flow = pd.DataFrame(plan_flow_rows(selected_plan, response_plan_items, response_plan_meta))
+            st.dataframe(flow, hide_index=True, use_container_width=True)
+        except Exception as exc:
+            st.error(f"Unable to display plan structure: {exc}")
+        st.caption(
+            "Recommend Mode mapping: 1 = Street Network, 2 = Beats, 3 = Use Default. In the current CAD configuration, Use Default resolves to Street Network."
+        )
+
+    with alarms_tab:
+        if alarm_levels.empty:
+            st.info("No additional-alarm configuration has been imported yet.")
+        else:
+            alarm_display = alarm_levels.rename(columns={
+                "event_type": "Event Type",
+                "event_description": "Description",
+                "alarm_level": "Alarm Level",
+                "response_plan": "Response Plan",
+                "pager_id": "Pager ID",
+                "instructions": "Instructions",
+            })[["Event Type", "Description", "Alarm Level", "Response Plan", "Pager ID", "Instructions"]]
+            st.dataframe(alarm_display, hide_index=True, use_container_width=True)
+            st.caption(
+                "Additional-alarm rows in v0.10 were transcribed from the CADDBM alarm-level grids you supplied. They can be replaced directly when the raw alarm-level table is available."
             )
-            st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
 
 
 if page == "Units & Resources":
@@ -1783,34 +1851,68 @@ if page == "Units & Resources":
 
 
 if page == "Capabilities":
-    _workspace_header("Capabilities", "Requirements, unit attributes, and personnel skills used by response-plan logic.")
+    _workspace_header(
+        "Capabilities",
+        "Imported DEFINE REQUIREMENT criteria, linked equipment/resources, unit attributes, and personnel skill M.",
+    )
+
+    executable_count = sum(1 for r in REQUIREMENTS.values() if r.executable)
+    linked_resource_count = len(requirement_resources)
+    criteria_count = len(requirement_source)
 
     st.markdown(
         f"""
         <div class="dashboard-kpis">
-          <div class="kpi-card"><div class="kpi-icon blue">R</div><div><div class="kpi-label">Requirements</div><div class="kpi-number">{len(REQUIREMENTS)}</div><div class="kpi-caption">Modeled definitions</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon cyan">A</div><div><div class="kpi-label">Attributes</div><div class="kpi-number">{len(ATTRIBUTE_OPTIONS)}</div><div class="kpi-caption">Known capability codes</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon navy">M</div><div><div class="kpi-label">Personnel Skills</div><div class="kpi-number">1</div><div class="kpi-caption">M = Paramedic</div></div></div>
-          <div class="kpi-card"><div class="kpi-icon charcoal">✓</div><div><div class="kpi-label">Slot Capacity</div><div class="kpi-number">1</div><div class="kpi-caption">Exclusive resource slot</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon blue">R</div><div><div class="kpi-label">Requirements</div><div class="kpi-number">{len(REQUIREMENTS):,}</div><div class="kpi-caption">Unique CAD definitions</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon cyan">≡</div><div><div class="kpi-label">Criteria Rows</div><div class="kpi-number">{criteria_count:,}</div><div class="kpi-caption">DEFINE REQUIREMENT rows</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon navy">◇</div><div><div class="kpi-label">Resource Links</div><div class="kpi-number">{linked_resource_count:,}</div><div class="kpi-caption">Equipment / skills</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon charcoal">✓</div><div><div class="kpi-label">Decoded</div><div class="kpi-number">{executable_count:,}</div><div class="kpi-caption">No unresolved attribute bits</div></div></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    req_search = st.text_input(
+        "Search requirements",
+        placeholder="AFR1, ALS_SKILL, SUPPRESSION UNIT...",
+        key="requirement_search_v010",
+    )
     req_rows = []
     for name, r in REQUIREMENTS.items():
+        lines = list(r.lines)
         req_rows.append({
             "Requirement": name,
-            "Quantity": r.quantity,
-            "Unit Type": r.unit_type or "",
-            "Unit ID": r.unit_id or "",
-            "Attributes": ", ".join(r.attributes),
-            "Equipment": ", ".join(r.equipment),
-            "Skills": ", ".join(r.skills),
-            "Beat": r.beat_option,
-            "Eq/Skill Option": r.equipment_skill_option,
+            "Criteria Lines": len(lines),
+            "Quantity": ", ".join(str(line.quantity) for line in lines),
+            "Unit Type": ", ".join(filter(None, [line.unit_type for line in lines])),
+            "Unit ID": ", ".join(filter(None, [line.unit_id for line in lines])),
+            "Station": ", ".join(filter(None, [line.station for line in lines])),
+            "Attributes": ", ".join(dict.fromkeys(a for line in lines for a in line.attributes)),
+            "Equipment": ", ".join(dict.fromkeys(e for line in lines for e in line.equipment)),
+            "Skills": ", ".join(dict.fromkeys(skill for line in lines for skill in line.skills)),
+            "Beat": ", ".join(dict.fromkeys(line.beat_option for line in lines)),
+            "Eq/Skill Option": ", ".join(dict.fromkeys(line.equipment_skill_option for line in lines)),
+            "Decoded": "Yes" if r.executable else "Needs attribute lookup",
         })
-    st.dataframe(pd.DataFrame(req_rows), hide_index=True, use_container_width=True)
+    req_df = pd.DataFrame(req_rows)
+    if req_search.strip():
+        q = req_search.strip().lower()
+        req_df = req_df[
+            req_df.astype(str).apply(
+                lambda row: row.str.lower().str.contains(q, regex=False).any(), axis=1
+            )
+        ]
+    st.dataframe(req_df, hide_index=True, use_container_width=True)
+
+    with st.expander("Imported field mappings", expanded=False):
+        st.write(
+            "`has_res`: 0 = no equipment/skill criteria; 1 = equipment and/or skill criteria. "
+            "`res_type`: 1 = equipment; 2 = personnel skill. "
+            "`recommend_mode`: 1 = Street Network; 2 = Beats; 3 = Use Default."
+        )
+        st.write(
+            "CADence currently evaluates personnel skill `M`. Equipment and M staffing remain dynamic scenario state rather than permanent unit capability."
+        )
 
     with st.expander("Known Unit Attributes", expanded=False):
         st.write(", ".join(ATTRIBUTE_OPTIONS))
@@ -1968,6 +2070,14 @@ if page == "Scenarios":
                     )
         else:
             st.caption("Manual Time uses the Test Time value in Unit Configuration.")
+
+        incident_beat = st.text_input(
+            "Incident Beat (optional)",
+            value="",
+            placeholder="Example: 421",
+            help="Required only when the imported CAD requirement uses Primary Beat. CADence does not infer CAD beats from the street address.",
+            key="incident_beat_v010",
+        ).strip()
 
     st.write("")
 
@@ -2138,15 +2248,18 @@ if page == "Scenarios":
 
     st.write("")
 
-    run_disabled = scenario_df.empty
-    if run_disabled:
+    run_disabled = scenario_df.empty or not str(response_plan_id).strip()
+    if scenario_df.empty:
         st.info("Select at least one unit before running the simulation.")
+    elif not str(response_plan_id).strip():
+        st.info("This Event Type has no response plan configured for the selected Operational Condition.")
 
     run_simulation = st.button(
-        "Run Dispatch Simulation",
+        "Run Initial Dispatch",
         type="primary",
         use_container_width=True,
         disabled=run_disabled,
+        key="run_initial_dispatch_v010",
     )
 
     if run_simulation:
@@ -2154,166 +2267,276 @@ if page == "Scenarios":
         route_df = None
         route_map_rows = []
         route_failures = []
+        units = []
 
-        if response_plan_id != "ALPHA":
-            st.error(
-                f"Response plan {response_plan_id} is mapped correctly, but its simulator "
-                "has not been implemented yet."
-            )
+        if routing_mode == "OpenStreetMap / OSRM":
+            try:
+                if incident_mode == "Street Address":
+                    if not incident_address.strip():
+                        raise RoutingError("Enter an incident address before routing.")
+                    incident_point = _point_from_cached(
+                        _cached_geocode(incident_address.strip())
+                    )
+                else:
+                    incident_point = parse_lat_lon(incident_lat, incident_lon)
+
+                with st.spinner("Calculating road-network routes..."):
+                    routed_frame, route_df, route_map_rows, route_failures = (
+                        _routing_dataframe(edited, incident_point)
+                    )
+                units = scenario_units_from_frame(routed_frame)
+            except RoutingError as exc:
+                st.error(str(exc))
+                st.caption(
+                    "You can also switch Location Input to Coordinates and run the scenario without address geocoding."
+                )
+            except Exception as exc:
+                st.error("Routing is temporarily unavailable. Try again shortly or use Manual Time.")
+                st.caption(str(exc))
         else:
-            if routing_mode == "OpenStreetMap / OSRM":
-                try:
-                    if incident_mode == "Street Address":
-                        if not incident_address.strip():
-                            raise RoutingError("Enter an incident address before routing.")
-                        incident_point = _point_from_cached(
-                            _cached_geocode(incident_address.strip())
-                        )
-                    else:
-                        incident_point = parse_lat_lon(incident_lat, incident_lon)
+            manual_frame = edited.copy()
+            manual_frame["Routing Mode"] = "manual"
+            units = scenario_units_from_frame(manual_frame)
 
-                    with st.spinner("Calculating road-network routes..."):
-                        routed_frame, route_df, route_map_rows, route_failures = (
-                            _routing_dataframe(edited, incident_point)
-                        )
+        if units:
+            try:
+                state = simulate_response_plan(
+                    response_plan_id,
+                    units,
+                    source_kind="Initial",
+                    incident_beat=incident_beat,
+                )
+                st.session_state.incident_v010 = {
+                    "event_type": event_type,
+                    "event_description": event_descriptions[event_type],
+                    "condition_id": condition_id,
+                    "condition_name": condition_names[condition_id],
+                    "initial_response_plan": response_plan_id,
+                    "current_alarm_level": 1,
+                    "routing_mode": routing_mode,
+                    "incident_beat": incident_beat,
+                    "state": state,
+                    "units": units,
+                    "routed_frame": routed_frame,
+                    "route_df": route_df,
+                    "route_map_rows": route_map_rows,
+                    "route_failures": route_failures,
+                    "incident_point": incident_point,
+                }
+            except UnsupportedConfigurationError as exc:
+                st.error(f"This imported plan cannot yet be fully simulated: {exc}")
+            except Exception as exc:
+                st.error(f"Simulation failed: {exc}")
 
-                    units = scenario_units_from_frame(routed_frame)
-                except Exception as exc:
-                    st.error(f"Routing failed: {exc}")
-                    units = []
+    incident = st.session_state.get("incident_v010")
+    if incident:
+        state = incident["state"]
+        units = incident["units"]
+        routed_frame = incident.get("routed_frame")
+        route_df = incident.get("route_df")
+        route_map_rows = incident.get("route_map_rows") or []
+        route_failures = incident.get("route_failures") or []
+        incident_point_active = incident.get("incident_point")
+        ordered_assignments = assignments_in_dispatch_order(state)
+        result_rows = _result_table(state, routed_frame)
+
+        st.write("")
+        with st.container(border=True):
+            _section_header(
+                "Active incident",
+                "Dispatch recommendation",
+                "Initial response plus any additional alarm or Ad Hoc plans applied to the same incident state.",
+            )
+            st.markdown(
+                f"""
+                <div class="result-summary">
+                  <span class="summary-pill success">Incident active</span>
+                  <span class="summary-pill">Event <strong>{html.escape(str(incident['event_type']))}</strong></span>
+                  <span class="summary-pill">Initial Plan <strong>{html.escape(str(incident['initial_response_plan']))}</strong></span>
+                  <span class="summary-pill">Condition <strong>{html.escape(str(incident['condition_id']))}</strong></span>
+                  <span class="summary-pill">Alarm Level <strong>{int(incident['current_alarm_level'])}</strong></span>
+                  <span class="summary-pill">Units <strong>{len(ordered_assignments)}</strong></span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if result_rows:
+                _render_dispatch_cards(result_rows)
+                with st.expander("Table View", expanded=False):
+                    st.dataframe(
+                        pd.DataFrame(result_rows),
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Dispatch Order": st.column_config.NumberColumn("Order", width="small"),
+                            "Road Distance (mi)": st.column_config.NumberColumn("Road mi", format="%.2f"),
+                        },
+                    )
             else:
-                manual_frame = edited.copy()
-                manual_frame["Routing Mode"] = "manual"
-                units = scenario_units_from_frame(manual_frame)
+                st.info("No resources were recommended from the current incident state.")
 
-            if units:
-                state = simulate_alpha(units)
-                ordered_assignments = assignments_in_dispatch_order(state)
-                result_rows = _result_table(state, routed_frame)
+        with st.container(border=True):
+            _section_header(
+                "Post-dispatch actions",
+                "Escalate or supplement the incident",
+                "Additional alarms and Ad Hoc plans evaluate against resources already on the incident.",
+            )
 
-                st.write("")
-                with st.container(border=True):
-                    _section_header(
-                        "Simulation result",
-                        "Dispatch recommendation",
-                        "Response-plan dispatch order",
-                    )
+            next_alarm = next_alarm_for_event(
+                incident["event_type"],
+                int(incident["current_alarm_level"]),
+                alarm_levels,
+            )
+            action_left, action_right = st.columns(2)
 
-                    st.markdown(
-                        f"""
-                        <div class="result-summary">
-                          <span class="summary-pill success">Simulation complete</span>
-                          <span class="summary-pill">Event <strong>{html.escape(event_type)}</strong></span>
-                          <span class="summary-pill">Plan <strong>{html.escape(response_plan_id)}</strong></span>
-                          <span class="summary-pill">Condition <strong>{html.escape(condition_id)}</strong></span>
-                          <span class="summary-pill">Units <strong>{len(ordered_assignments)}</strong></span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    if result_rows:
-                        _render_dispatch_cards(result_rows)
-
-                        with st.expander("Table View", expanded=False):
-                            result_df = pd.DataFrame(result_rows)
-                            st.dataframe(
-                                result_df,
-                                hide_index=True,
-                                use_container_width=True,
-                                column_config={
-                                    "Dispatch Order": st.column_config.NumberColumn(
-                                        "Order", width="small"
-                                    ),
-                                    "Road Distance (mi)": st.column_config.NumberColumn(
-                                        "Road mi", format="%.2f"
-                                    ),
-                                },
-                            )
-                    else:
-                        st.info("No resources were recommended from the current scenario.")
-
-                if routing_mode == "OpenStreetMap / OSRM" and route_map_rows:
-                    dispatched_ids = [a.unit_id for a in ordered_assignments]
-                    visible_route_rows = _filter_route_rows_for_map(
-                        route_map_rows,
-                        dispatched_ids,
-                        show_all=(map_scope == "All in-service units"),
-                        additional_unit_ids=(
-                            map_extra_units
-                            if map_scope == "Dispatched + selected in-service units"
-                            else []
-                        ),
-                    )
-
-                    st.write("")
-                    with st.container(border=True):
-                        _section_header(
-                            "Route map",
-                            "Dispatched units",
-                            "The red star marks the incident.",
+            with action_left:
+                if next_alarm is None:
+                    st.caption("No higher alarm level is configured for this Event Type in the imported alarm table.")
+                else:
+                    level = int(next_alarm["alarm_level"])
+                    next_alarm_plan = str(next_alarm["response_plan"])
+                    alarm_plan_available = next_alarm_plan in set(response_plan_meta["resp_plan_name"].astype(str))
+                    st.write(f"**Next Alarm:** Level {level} → `{next_alarm_plan}`")
+                    if not alarm_plan_available:
+                        st.warning(
+                            "This CAD alarm-level record references a response plan that is not present in the supplied Response_Plans export. The mapping is preserved, but CADence will not invent the missing plan."
                         )
-                        deck = _route_map(visible_route_rows, incident_point)
-                        if deck is not None:
-                            st.pydeck_chart(
-                                deck,
-                                use_container_width=True,
-                                height=560,
+                    if st.button(
+                        f"Add Alarm Level {level}",
+                        use_container_width=True,
+                        disabled=not alarm_plan_available,
+                        key=f"add_alarm_v010_{incident['event_type']}_{level}",
+                    ):
+                        working_state = copy.deepcopy(state)
+                        try:
+                            new_state = simulate_response_plan(
+                                next_alarm_plan,
+                                units,
+                                state=working_state,
+                                source_kind=f"Alarm {level}",
+                                incident_beat=str(incident.get("incident_beat", "")),
                             )
-                        else:
-                            st.info(
-                                "No route geometry is available for the selected map filter."
-                            )
+                            incident["state"] = new_state
+                            incident["current_alarm_level"] = level
+                            st.session_state.incident_v010 = incident
+                            st.rerun()
+                        except UnsupportedConfigurationError as exc:
+                            st.error(f"Alarm plan cannot yet be fully simulated: {exc}")
+                        except Exception as exc:
+                            st.error(f"Unable to apply alarm plan: {exc}")
 
-                with st.expander("Technical Details", expanded=False):
-                    tech_tabs = st.tabs(["Routing", "Trace", "Plan Flow"])
+            with action_right:
+                ad_hoc_options = ad_hoc_plan_names(response_plan_meta)
+                selected_ad_hoc = st.selectbox(
+                    "Ad Hoc Response Plan",
+                    options=ad_hoc_options,
+                    index=None,
+                    placeholder="Select an Ad Hoc plan",
+                    key="ad_hoc_plan_v010",
+                )
+                if st.button(
+                    "Apply Ad Hoc Plan",
+                    use_container_width=True,
+                    disabled=not selected_ad_hoc,
+                    key="apply_ad_hoc_v010",
+                ):
+                    working_state = copy.deepcopy(state)
+                    try:
+                        new_state = simulate_response_plan(
+                            str(selected_ad_hoc),
+                            units,
+                            state=working_state,
+                            source_kind="Ad Hoc",
+                            incident_beat=str(incident.get("incident_beat", "")),
+                        )
+                        incident["state"] = new_state
+                        st.session_state.incident_v010 = incident
+                        st.rerun()
+                    except UnsupportedConfigurationError as exc:
+                        st.error(f"Ad Hoc plan cannot yet be fully simulated: {exc}")
+                    except Exception as exc:
+                        st.error(f"Unable to apply Ad Hoc plan: {exc}")
 
-                    with tech_tabs[0]:
-                        if routing_mode != "OpenStreetMap / OSRM":
-                            st.info("Routing diagnostics are available in Road Network mode.")
-                        elif route_df is None or route_df.empty:
-                            st.info("No routing diagnostics are available.")
-                        else:
-                            if route_failures:
-                                failure_text = "; ".join(
-                                    f"{sid}: {reason}" for sid, reason in route_failures
-                                )
-                                st.warning(failure_text)
-                            st.dataframe(
-                                route_df.drop(
-                                    columns=[
-                                        "Travel Time (sec)",
-                                        "Latitude",
-                                        "Longitude",
-                                        "Route Color",
-                                    ]
-                                ),
-                                hide_index=True,
-                                use_container_width=True,
-                            )
+            if st.button("Reset Active Incident", use_container_width=True, key="reset_incident_v010"):
+                del st.session_state["incident_v010"]
+                st.rerun()
 
-                    with tech_tabs[1]:
-                        st.code("\n".join(state.trace), language="text")
+        if incident.get("routing_mode") == "OpenStreetMap / OSRM" and route_map_rows and incident_point_active is not None:
+            dispatched_ids = [a.unit_id for a in ordered_assignments]
+            visible_route_rows = _filter_route_rows_for_map(
+                route_map_rows,
+                dispatched_ids,
+                show_all=(map_scope == "All in-service units"),
+                additional_unit_ids=(
+                    map_extra_units
+                    if map_scope == "Dispatched + selected in-service units"
+                    else []
+                ),
+            )
+            st.write("")
+            with st.container(border=True):
+                _section_header("Route map", "Incident resources", "The red star marks the incident.")
+                deck = _route_map(visible_route_rows, incident_point_active)
+                if deck is not None:
+                    st.pydeck_chart(deck, use_container_width=True, height=560)
+                else:
+                    st.info("No route geometry is available for the selected map filter.")
 
-                    with tech_tabs[2]:
-                        for n in sorted(ALPHA_STEPS):
-                            s = ALPHA_STEPS[n]
-                            if s.kind == "GROUP":
-                                detail = " OR ".join(s.alternatives)
-                            elif s.requirement:
-                                detail = s.requirement
-                            else:
-                                detail = ""
-                            extra = (
-                                f" | CAD Max Distance {s.max_time_minutes:g} = "
-                                f"{s.max_time_minutes:g} min"
-                                if s.max_time_minutes is not None
-                                else ""
-                            )
-                            st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
+        with st.expander("Technical Details", expanded=False):
+            tech_tabs = st.tabs(["Routing", "Trace", "Plan Flow", "Incident History"])
+
+            with tech_tabs[0]:
+                if incident.get("routing_mode") != "OpenStreetMap / OSRM":
+                    st.info("Routing diagnostics are available in Road Network mode.")
+                elif route_df is None or route_df.empty:
+                    st.info("No routing diagnostics are available.")
+                else:
+                    if route_failures:
+                        failure_text = "; ".join(f"{sid}: {reason}" for sid, reason in route_failures)
+                        st.warning(failure_text)
+                    st.dataframe(
+                        route_df.drop(
+                            columns=["Travel Time (sec)", "Latitude", "Longitude", "Route Color"],
+                            errors="ignore",
+                        ),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+
+            with tech_tabs[1]:
+                st.code("\n".join(state.trace), language="text")
+
+            with tech_tabs[2]:
+                applied_top_level = []
+                for kind, plan_name in state.applied_plans:
+                    if str(kind).startswith("Nested from"):
+                        continue
+                    pair = (kind, plan_name)
+                    if pair not in applied_top_level:
+                        applied_top_level.append(pair)
+                flow_plan_options = [p for _, p in applied_top_level] or [incident["initial_response_plan"]]
+                flow_plan = st.selectbox(
+                    "Applied plan",
+                    options=flow_plan_options,
+                    key="technical_plan_flow_v010",
+                )
+                st.dataframe(
+                    pd.DataFrame(plan_flow_rows(flow_plan, response_plan_items, response_plan_meta)),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            with tech_tabs[3]:
+                history_rows = []
+                for idx, (kind, plan_name) in enumerate(state.applied_plans, start=1):
+                    if str(kind).startswith("Nested from"):
+                        continue
+                    history_rows.append({"Sequence": idx, "Action": kind, "Response Plan": plan_name})
+                st.dataframe(pd.DataFrame(history_rows), hide_index=True, use_container_width=True)
 
     st.caption(
-        "Road Network uses OpenStreetMap / OSRM and may differ from Hexagon routing."
+        "Road Network uses OpenStreetMap / OSRM and may differ from Hexagon routing. Imported CAD criteria that are not yet decoded fail explicitly rather than being ignored."
     )
 
 

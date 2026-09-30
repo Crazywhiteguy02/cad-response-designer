@@ -12,12 +12,14 @@ import requests
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATION_FILE = DATA_DIR / "station_crosswalk.csv"
+GEOCODE_SEED_FILE = DATA_DIR / "geocode_seeds.csv"
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 OSRM_TABLE_URL = "https://router.project-osrm.org/table/v1/driving"
 OSRM_ROUTE_URL = "https://router.project-osrm.org/route/v1/driving"
 
-USER_AGENT = "CADResponseDesignerPrototype/0.5 (OpenStreetMap routing validation)"
+USER_AGENT = "CADence/0.9.1 (public-safety response-planning simulator)"
 
 _METERS_PER_MILE = 1609.344
 _last_nominatim_request = 0.0
@@ -45,6 +47,9 @@ def load_station_crosswalk() -> pd.DataFrame:
     df = pd.read_csv(STATION_FILE, dtype=str).fillna("")
     df["cad_station_id"] = df["cad_station_id"].astype(str)
     df["active"] = df["active"].str.upper().eq("TRUE")
+    for col in ("latitude", "longitude"):
+        if col not in df.columns:
+            df[col] = ""
     return df
 
 
@@ -68,6 +73,64 @@ def station_record(station_id: str, stations: pd.DataFrame | None = None) -> dic
     return match.iloc[0].to_dict()
 
 
+def _normalize_geocode_query(query: str) -> str:
+    text = (query or "").strip().lower()
+    text = text.replace(".", " ").replace(",", " ")
+    replacements = {
+        " parkway": " pkwy",
+        " road": " rd",
+        " street": " st",
+        " avenue": " ave",
+        " boulevard": " blvd",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return " ".join(text.split())
+
+
+def _load_geocode_seeds() -> dict[str, GeoPoint]:
+    if not GEOCODE_SEED_FILE.exists():
+        return {}
+    frame = pd.read_csv(GEOCODE_SEED_FILE, dtype=str).fillna("")
+    seeds: dict[str, GeoPoint] = {}
+    for _, row in frame.iterrows():
+        try:
+            key = _normalize_geocode_query(str(row.get("query", "")))
+            if not key:
+                continue
+            seeds[key] = GeoPoint(
+                lat=float(row["latitude"]),
+                lon=float(row["longitude"]),
+                label=str(row.get("label", "") or row.get("query", "")),
+            )
+        except (TypeError, ValueError, KeyError):
+            continue
+    return seeds
+
+
+def station_point_from_record(record: dict | None) -> GeoPoint | None:
+    """Return a stored station coordinate without calling an external geocoder."""
+    if not record:
+        return None
+    lat = str(record.get("latitude", "") or "").strip()
+    lon = str(record.get("longitude", "") or "").strip()
+    if not lat or not lon:
+        return None
+    try:
+        return GeoPoint(
+            lat=float(lat),
+            lon=float(lon),
+            label=str(
+                record.get("station_name")
+                or record.get("address")
+                or record.get("cad_station_id")
+                or ""
+            ),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_lat_lon(lat, lon) -> GeoPoint:
     lat = float(lat)
     lon = float(lon)
@@ -87,33 +150,137 @@ def _throttle_nominatim() -> None:
         _last_nominatim_request = time.monotonic()
 
 
+def _geocode_census(query: str, timeout: float) -> GeoPoint | None:
+    """Use the U.S. Census geocoder first for U.S. street addresses."""
+    try:
+        response = requests.get(
+            CENSUS_GEOCODER_URL,
+            params={
+                "address": query,
+                "benchmark": "Public_AR_Current",
+                "format": "json",
+            },
+            headers={"User-Agent": USER_AGENT},
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+        matches = (
+            payload.get("result", {})
+            .get("addressMatches", [])
+        )
+        if not matches:
+            return None
+        item = matches[0]
+        coords = item.get("coordinates") or {}
+        lat = coords.get("y")
+        lon = coords.get("x")
+        if lat is None or lon is None:
+            return None
+        return GeoPoint(
+            lat=float(lat),
+            lon=float(lon),
+            label=str(item.get("matchedAddress") or query),
+        )
+    except Exception:
+        # Census is a preferred first lookup, not a single point of failure.
+        return None
+
+
+def _retry_after_seconds(response, attempt: int) -> float:
+    header = None
+    try:
+        header = response.headers.get("Retry-After")
+    except Exception:
+        header = None
+
+    if header:
+        try:
+            return max(1.1, min(float(header), 12.0))
+        except (TypeError, ValueError):
+            pass
+
+    # Gentle exponential backoff while keeping the UI responsive.
+    return min(1.5 * (2 ** attempt), 8.0)
+
+
+def _geocode_nominatim(query: str, timeout: float) -> GeoPoint | None:
+    """Nominatim fallback with required throttling and explicit 429 handling."""
+    for attempt in range(3):
+        _throttle_nominatim()
+        try:
+            response = requests.get(
+                NOMINATIM_URL,
+                params={
+                    "q": query,
+                    "format": "jsonv2",
+                    "limit": 1,
+                    "countrycodes": "us",
+                },
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept-Language": "en-US,en;q=0.8",
+                },
+                timeout=timeout,
+            )
+        except requests.RequestException:
+            if attempt < 2:
+                time.sleep(_retry_after_seconds(None, attempt))
+                continue
+            return None
+
+        if response.status_code == 429:
+            if attempt < 2:
+                time.sleep(_retry_after_seconds(response, attempt))
+                continue
+            return None
+
+        if response.status_code != 200:
+            return None
+
+        try:
+            payload = response.json()
+        except Exception:
+            return None
+
+        if not payload:
+            return None
+
+        item = payload[0]
+        try:
+            return GeoPoint(
+                lat=float(item["lat"]),
+                lon=float(item["lon"]),
+                label=str(item.get("display_name") or query),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    return None
+
+
 def geocode_address(query: str, timeout: float = 15.0) -> GeoPoint:
     query = (query or "").strip()
     if not query:
         raise RoutingError("No address was supplied for geocoding.")
 
-    _throttle_nominatim()
-    response = requests.get(
-        NOMINATIM_URL,
-        params={
-            "q": query,
-            "format": "jsonv2",
-            "limit": 1,
-            "countrycodes": "us",
-        },
-        headers={"User-Agent": USER_AGENT},
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if not payload:
-        raise RoutingError(f"OpenStreetMap could not geocode: {query}")
+    # Static seeds avoid external calls for known frequently used locations.
+    seeded = _load_geocode_seeds().get(_normalize_geocode_query(query))
+    if seeded is not None:
+        return seeded
 
-    item = payload[0]
-    return GeoPoint(
-        lat=float(item["lat"]),
-        lon=float(item["lon"]),
-        label=str(item.get("display_name") or query),
+    point = _geocode_census(query, timeout)
+    if point is not None:
+        return point
+
+    point = _geocode_nominatim(query, timeout)
+    if point is not None:
+        return point
+
+    raise RoutingError(
+        "Address lookup is temporarily unavailable or the address could not be found. "
+        "Try the full street address, try again shortly, or use Coordinates."
     )
 
 

@@ -3,8 +3,9 @@ from dataclasses import dataclass, field
 from typing import Iterable
 import pandas as pd
 
-from requirements import REQUIREMENTS, Requirement
+from requirements import REQUIREMENTS, Requirement, RequirementLine
 from alpha_plan import ALPHA_STEPS, PlanStep
+from response_plans import get_response_plan
 from catalog import attributes_from_text, equipment_from_text
 
 
@@ -30,12 +31,16 @@ class Assignment:
     unit_id: str
     sequence: int = 0
     display_order: int | None = None
+    source_plan: str = ""
+    source_kind: str = "Initial"
+    batch_id: int = 0
 
 
 @dataclass
 class SimulationState:
     assignments: list[Assignment] = field(default_factory=list)
     trace: list[str] = field(default_factory=list)
+    applied_plans: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def consumed_units(self) -> set[str]:
@@ -324,19 +329,24 @@ def simulate_alpha(units: list[ScenarioUnit]) -> SimulationState:
 
 
 def assignments_in_dispatch_order(state: SimulationState) -> list[Assignment]:
-    """Return recommendations in response-plan display/dispatch order.
+    """Return recommendations in plan display order while preserving incident batches.
 
-    Explicit CADDBM Display Order values are honored first. Items without an
-    explicit Display Order retain their response-plan recommendation sequence.
-    Routing ETA never controls the displayed recommendation sequence.
+    Within each applied response-plan batch, explicit CADDBM Display Order values
+    are honored first. Separate post-dispatch alarm/ad-hoc batches remain after
+    earlier incident recommendations and are never moved ahead of the initial
+    dispatch merely because they use a low Display Order value.
     """
-    explicit = [a for a in state.assignments if a.display_order is not None]
-    implicit = [a for a in state.assignments if a.display_order is None]
+    result: list[Assignment] = []
+    batches = sorted({getattr(a, "batch_id", 0) for a in state.assignments})
+    for batch_id in batches:
+        batch = [a for a in state.assignments if getattr(a, "batch_id", 0) == batch_id]
+        explicit = [a for a in batch if a.display_order is not None]
+        implicit = [a for a in batch if a.display_order is None]
+        explicit.sort(key=lambda a: (a.display_order, a.sequence))
+        implicit.sort(key=lambda a: a.sequence)
+        result.extend(explicit + implicit)
+    return result
 
-    explicit.sort(key=lambda a: (a.display_order, a.sequence))
-    implicit.sort(key=lambda a: a.sequence)
-
-    return explicit + implicit
 
 def pair_conflicts(frame: pd.DataFrame) -> list[tuple[str, str]]:
     """Find simultaneous base/M-suffix unit pairs without exposing a Pair Unit column.
@@ -358,3 +368,344 @@ def pair_conflicts(frame: pd.DataFrame) -> list[tuple[str, str]]:
 
     return sorted(pairs)
 
+
+
+class UnsupportedConfigurationError(RuntimeError):
+    pass
+
+
+def _line_as_requirement(line: RequirementLine) -> Requirement:
+    return Requirement(
+        name=f"line {line.line_number}",
+        quantity=line.quantity,
+        unit_type=line.unit_type,
+        unit_id=line.unit_id,
+        station=line.station,
+        attributes=line.attributes,
+        attribute_mode=line.attribute_mode,
+        equipment=line.equipment,
+        skills=line.skills,
+        beat_option=line.beat_option,
+        specified_beat=line.specified_beat,
+        skill_option=line.skill_option,
+        equipment_skill_option=line.equipment_skill_option,
+        unresolved_attribute_mask=line.unresolved_attribute_mask,
+        lines=(line,),
+    )
+
+
+def _unit_matches_line(unit: ScenarioUnit, line: RequirementLine, *, incident_beat: str = "") -> tuple[bool, list[str]]:
+    if line.unresolved_attribute_mask:
+        raise UnsupportedConfigurationError(
+            f"Requirement attribute mask {line.unresolved_attribute_mask} has not yet been decoded."
+        )
+
+    if line.unit_id and unit.unit_id != line.unit_id:
+        return False, [f"Unit ID {unit.unit_id} != {line.unit_id}"]
+    if line.unit_type and unit.unit_type != line.unit_type:
+        return False, [f"Unit Type {unit.unit_type} != {line.unit_type}"]
+    if line.station and unit.station_id != line.station:
+        return False, [f"Station {unit.station_id} != {line.station}"]
+
+    reasons: list[str] = []
+    if line.unit_id:
+        reasons.append(f"Unit ID {unit.unit_id}")
+    if line.unit_type:
+        reasons.append(f"Unit Type {unit.unit_type}")
+    if line.station:
+        reasons.append(f"Station {unit.station_id}")
+
+    if line.attributes:
+        matches = [a for a in line.attributes if a in unit.attributes]
+        if line.attribute_mode.upper() == "ANY":
+            if not matches:
+                return False, [f"no required attribute present: {', '.join(line.attributes)}"]
+            reasons.append(f"attribute {', '.join(matches)}")
+        else:
+            missing = [a for a in line.attributes if a not in unit.attributes]
+            if missing:
+                return False, [f"missing attributes: {', '.join(missing)}"]
+            reasons.append(f"attributes {', '.join(line.attributes)}")
+
+    if line.equipment:
+        missing = [e for e in line.equipment if unit.equipment.get(e, 0) < 1]
+        if missing:
+            return False, [f"missing equipment: {', '.join(missing)}"]
+        reasons.append(f"equipment {', '.join(line.equipment)}")
+
+    if line.skills:
+        if set(line.skills) == {"M"}:
+            if unit.m_skill_count < 1:
+                return False, ["no personnel skill M"]
+            reasons.append(f"M skill={unit.m_skill_count}")
+        else:
+            raise UnsupportedConfigurationError(
+                f"Personnel skills {', '.join(line.skills)} are present in CAD data; v0.10 models M only."
+            )
+
+    if line.beat_option == "SPECIFIED" and line.specified_beat:
+        if unit.beat != line.specified_beat:
+            return False, [f"Beat {unit.beat} != specified beat {line.specified_beat}"]
+        reasons.append(f"specified beat {line.specified_beat}")
+    elif line.beat_option == "PRIMARY":
+        if not incident_beat:
+            raise UnsupportedConfigurationError(
+                "This requirement uses Primary Beat. Enter an Incident Beat to evaluate it."
+            )
+        if unit.beat != incident_beat:
+            return False, [f"Beat {unit.beat} != incident beat {incident_beat}"]
+        reasons.append(f"primary beat {incident_beat}")
+    elif line.beat_option == "BACKUP":
+        raise UnsupportedConfigurationError(
+            "Backup Beat recommendation is present in CAD data but has not yet been modeled in CADence."
+        )
+
+    return True, reasons
+
+
+def _selected_units(state: SimulationState, unit_by_id: dict[str, ScenarioUnit]) -> list[ScenarioUnit]:
+    seen: set[str] = set()
+    result: list[ScenarioUnit] = []
+    for assignment in state.assignments:
+        if assignment.unit_id in seen:
+            continue
+        unit = unit_by_id.get(assignment.unit_id)
+        if unit is not None:
+            seen.add(unit.unit_id)
+            result.append(unit)
+    return result
+
+
+def _line_satisfied_by_existing(
+    line: RequirementLine,
+    needed: int,
+    selected: list[ScenarioUnit],
+    *,
+    incident_beat: str = "",
+) -> tuple[bool, str]:
+    # M is modeled as a personnel capability and may be aggregated across units
+    # when CAD's resource option allows Any Unit.
+    if line.skills and set(line.skills) == {"M"} and line.equipment_skill_option == "ANY_UNIT":
+        total = sum(u.m_skill_count for u in selected)
+        return total >= needed, f"required={needed} M; available={total}"
+
+    matches: list[str] = []
+    for unit in selected:
+        ok, _ = _unit_matches_line(unit, line, incident_beat=incident_beat)
+        if ok:
+            matches.append(unit.unit_id)
+    return len(matches) >= needed, f"required={needed}; existing={', '.join(matches) if matches else 'none'}"
+
+
+def requirement_satisfied_by_incident(
+    req_name: str,
+    state: SimulationState,
+    units: list[ScenarioUnit],
+    *,
+    multiplier: int = 1,
+    incident_beat: str = "",
+) -> tuple[bool, str]:
+    req = REQUIREMENTS.get(req_name)
+    if req is None:
+        raise UnsupportedConfigurationError(f"Requirement {req_name} is not present in the imported DEFINE REQUIREMENT table.")
+    unit_by_id = {u.unit_id: u for u in units}
+    selected = _selected_units(state, unit_by_id)
+    details: list[str] = []
+    for line in req.lines or ():
+        needed = max(1, line.quantity * max(1, multiplier))
+        satisfied, detail = _line_satisfied_by_existing(
+            line, needed, selected, incident_beat=incident_beat
+        )
+        details.append(f"line {line.line_number}: {detail}")
+        if not satisfied:
+            return False, "; ".join(details)
+    return True, "; ".join(details)
+
+
+def _preview_requirement_additions(
+    req_name: str,
+    units: list[ScenarioUnit],
+    state: SimulationState,
+    *,
+    multiplier: int = 1,
+    max_time_minutes: float | None = None,
+    incident_beat: str = "",
+) -> tuple[list[tuple[ScenarioUnit, list[str]]], list[str]]:
+    req = REQUIREMENTS.get(req_name)
+    if req is None:
+        raise UnsupportedConfigurationError(f"Requirement {req_name} is not present in the imported DEFINE REQUIREMENT table.")
+
+    unit_by_id = {u.unit_id: u for u in units}
+    selected = _selected_units(state, unit_by_id)
+    reserved = set(state.consumed_units)
+    additions: list[tuple[ScenarioUnit, list[str]]] = []
+    detail: list[str] = []
+
+    for line in req.lines or ():
+        needed = max(1, line.quantity * max(1, multiplier))
+        satisfied, existing_detail = _line_satisfied_by_existing(
+            line, needed, selected, incident_beat=incident_beat
+        )
+        # Existing response slots can satisfy a pure equipment/skill capability
+        # requirement without consuming the same physical unit in another slot.
+        pure_capability = bool(line.equipment or line.skills) and not (
+            line.unit_type or line.unit_id or line.station or line.attributes
+        )
+        if satisfied and pure_capability:
+            detail.append(f"line {line.line_number} already satisfied: {existing_detail}")
+            continue
+
+        # Response/resource slots are exclusive. Existing incident units may
+        # satisfy conditions and pure equipment/skill capability checks, but a
+        # previously consumed physical unit cannot fill a new non-capability
+        # response slot a second time.
+        remaining = needed
+
+        for _ in range(remaining):
+            candidates = []
+            for unit in units:
+                if unit.unit_id in reserved:
+                    continue
+                if not _route_ready(unit):
+                    continue
+                if max_time_minutes is not None and _time_for_limit_minutes(unit) > max_time_minutes:
+                    continue
+                ok, reasons = _unit_matches_line(unit, line, incident_beat=incident_beat)
+                if ok:
+                    candidates.append((_ordering_value(unit), unit.unit_id, unit, reasons))
+            if not candidates:
+                return [], detail + [f"line {line.line_number}: no eligible unconsumed unit"]
+            candidates.sort(key=lambda x: (x[0], x[1]))
+            _, _, chosen, reasons = candidates[0]
+            additions.append((chosen, reasons))
+            reserved.add(chosen.unit_id)
+            selected.append(chosen)
+        detail.append(f"line {line.line_number}: selected {remaining} new unit(s)")
+
+    return additions, detail
+
+
+def simulate_response_plan(
+    plan_name: str,
+    units: list[ScenarioUnit],
+    *,
+    state: SimulationState | None = None,
+    source_kind: str = "Initial",
+    incident_beat: str = "",
+    _stack: tuple[str, ...] = (),
+    _batch_id: int | None = None,
+) -> SimulationState:
+    """Execute an imported CAD response-plan graph against the current incident state.
+
+    v0.10 supports requirement groups, requirement conditions, connector/no-action
+    nodes, and nested response plans. Unknown attribute bits and unmodeled beat
+    semantics fail explicitly rather than being silently ignored.
+    """
+    if plan_name in _stack:
+        raise RuntimeError(f"Nested response-plan loop detected: {' -> '.join(_stack + (plan_name,))}")
+    if len(_stack) > 25:
+        raise RuntimeError("Nested response-plan depth exceeded 25")
+
+    plan = get_response_plan(plan_name)
+    if state is None:
+        state = SimulationState()
+    if _batch_id is None:
+        _batch_id = max((getattr(a, "batch_id", 0) for a in state.assignments), default=-1) + 1
+    state.applied_plans.append((source_kind, plan_name))
+    state.trace.append(f"=== {source_kind.upper()} PLAN {plan_name} ===")
+
+    if not plan.items:
+        state.trace.append("Plan contains no items.")
+        return state
+
+    current = min(plan.items)
+    guard = 0
+    while current:
+        guard += 1
+        if guard > 500:
+            raise RuntimeError(f"{plan_name} exceeded 500 plan items; possible flow loop")
+        item = plan.items.get(current)
+        if item is None:
+            raise RuntimeError(f"{plan_name} references missing item {current}")
+
+        state.trace.append(f"{plan_name} ITEM {item.item_id}: {item.item_type_name}")
+
+        if item.item_type == 0:
+            current = item.next_item_id
+            continue
+
+        if item.item_type == 3:
+            if item.plan_ref:
+                simulate_response_plan(
+                    item.plan_ref, units, state=state, source_kind=f"Nested from {plan_name}",
+                    incident_beat=incident_beat, _stack=_stack + (plan_name,), _batch_id=_batch_id,
+                )
+            current = item.next_item_id
+            continue
+
+        if item.item_type == 2:
+            if not item.alternatives:
+                result, detail = False, "condition has no requirement"
+            else:
+                alt = item.alternatives[0]
+                result, detail = requirement_satisfied_by_incident(
+                    alt.requirement, state, units, multiplier=alt.quantity, incident_beat=incident_beat
+                )
+            req_label = item.alternatives[0].requirement if item.alternatives else "(none)"
+            state.trace.append(
+                f"CONDITION {req_label}: {'YES' if result else 'NO'} — {detail} "
+                f"[cond_type={item.cond_type}]"
+            )
+            current = item.success_item_id if result else item.failure_item_id
+            continue
+
+        if item.item_type == 1:
+            previews = []
+            for alt in item.alternatives:
+                try:
+                    additions, detail = _preview_requirement_additions(
+                        alt.requirement, units, state, multiplier=alt.quantity,
+                        max_time_minutes=alt.max_route if alt.max_route and alt.max_route > 0 else None,
+                        incident_beat=incident_beat,
+                    )
+                except UnsupportedConfigurationError:
+                    raise
+                if additions or any("already satisfied" in d for d in detail):
+                    first_score = min((_ordering_value(u) for u, _ in additions), default=-1.0)
+                    previews.append((first_score, alt.order, alt, additions, detail))
+
+            if not previews:
+                state.trace.append("REQUIREMENT GROUP FAILED — no eligible alternative")
+                current = item.failure_item_id
+                continue
+
+            previews.sort(key=lambda x: (x[0], x[1]))
+            _, _, chosen_alt, additions, detail = previews[0]
+            if additions:
+                for unit, reasons in additions:
+                    state.assignments.append(
+                        Assignment(
+                            item.item_id, chosen_alt.requirement, unit.unit_id,
+                            sequence=len(state.assignments) + 1,
+                            display_order=chosen_alt.display_order,
+                            source_plan=plan_name, source_kind=source_kind, batch_id=_batch_id,
+                        )
+                    )
+                    state.trace.append(
+                        f"GROUP selected {unit.unit_id} via {chosen_alt.requirement} — "
+                        + "; ".join(reasons) + _routing_trace(unit)
+                    )
+            else:
+                state.trace.append(
+                    f"GROUP {chosen_alt.requirement} satisfied by existing incident capability — "
+                    + "; ".join(detail)
+                )
+            current = item.success_item_id
+            continue
+
+        raise UnsupportedConfigurationError(
+            f"Response plan {plan_name} uses unsupported item_type {item.item_type}."
+        )
+
+    state.trace.append(f"=== END {plan_name} ===")
+    return state
