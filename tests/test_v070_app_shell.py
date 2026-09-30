@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_v070_uses_app_shell_and_mobile_css():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert 'class="appbar"' in app
-    assert 'class="brand-mark">CRD<' in app
+    assert 'class="brand-mark"><svg' in app
     assert "@media (max-width: 768px)" in app
     assert "border-radius: 24px" in app
 

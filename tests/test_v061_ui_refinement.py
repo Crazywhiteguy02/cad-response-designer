@@ -38,6 +38,6 @@ def test_incident_uses_star_polygon_without_incident_word_label():
 def test_v061_has_card_based_application_styling():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "with st.container(border=True):" in app
-    assert "--red-600" in app
+    assert "--action-blue: #0162E8;" in app
     assert "appbar" in app
     assert "dispatch-grid" in app
