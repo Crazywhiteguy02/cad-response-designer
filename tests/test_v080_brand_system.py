@@ -4,8 +4,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_v080_uses_cadence_dashboard_shell():
     app=(ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'page_title="CADence v0.8.0"' in app
-    assert '"Dashboard", "Dispatch Simulator", "Stations", "Units & Resources", "Configuration"' in app
+    assert 'page_title="CADence v0.9.0"' in app
+    assert '"Dashboard",' in app
+    assert '"Response Plans",' in app
+    assert '"Scenarios",' in app
+    assert '"Settings",' in app
     assert 'class="sidebar-wordmark"' in app
     assert 'Intelligent Response Planning' in app
 
@@ -19,6 +22,6 @@ def test_v080_brand_board_visual_system():
 def test_v080_has_dashboard_summary():
     app=(ROOT / "app.py").read_text(encoding="utf-8")
     assert 'if page == "Dashboard":' in app
-    assert 'class="dashboard-grid"' in app
-    assert 'Current modeled plan' in app
+    assert 'class="dashboard-kpis"' in app
+    assert 'Response Plans' in app
     assert 'ALPHA' in app
