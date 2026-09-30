@@ -7,9 +7,9 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-from catalog import load_catalog
-from requirements import REQUIREMENTS, load_requirement_source
-from response_plans import (
+from cad_catalog import load_catalog
+from cad_requirements import REQUIREMENTS, load_requirement_source
+from cad_response_plans import (
     load_response_plan_items,
     load_response_plan_meta,
     load_alarm_levels,
@@ -17,13 +17,13 @@ from response_plans import (
     next_alarm_for_event,
     plan_flow_rows,
 )
-from event_config import (
+from cad_event_config import (
     load_event_plan_map,
     operational_conditions,
     event_types_for_condition,
     resolve_response_plan,
 )
-from engine import (
+from cad_engine import (
     scenario_units_from_frame,
     simulate_response_plan,
     UnsupportedConfigurationError,
@@ -31,7 +31,7 @@ from engine import (
     pair_conflicts,
     assignments_in_dispatch_order,
 )
-from routing import (
+from cad_routing import (
     load_station_crosswalk,
     station_record,
     station_point_from_record,
@@ -44,7 +44,7 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CADence v0.10.0",
+    page_title="CADence v0.10.0.1",
     page_icon="C",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -984,7 +984,7 @@ with st.sidebar:
         key="cadence_page_v090",
     )
     st.markdown(
-        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.10.0</div>',
+        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.10.0.1</div>',
         unsafe_allow_html=True,
     )
 

@@ -1,0 +1,8 @@
+CADence v0.10.0.1 deployment hotfix
+
+Upload/copy ALL files and folders in this package to the ROOT of the GitHub
+repository used by Streamlit Cloud. This ZIP intentionally has app.py at the
+archive root (not inside a version-named parent folder).
+
+The v0.10 core modules use cad_* filenames so stale v0.9 files left in the
+repository cannot be imported by the v0.10 app.

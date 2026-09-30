@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_cadence_brand_name_and_palette():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'page_title="CADence v0.10.0"' in app
+    assert 'page_title="CADence v0.10.0.1"' in app
     assert 'class="sidebar-wordmark"' in app
     assert "--brand-navy: #011340;" in app
     assert "--action-blue: #0162E8;" in app

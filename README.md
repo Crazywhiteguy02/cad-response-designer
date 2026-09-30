@@ -553,3 +553,13 @@ The additional-alarm table in this release is screenshot-derived. Replace it wit
 ### Routing scope
 
 v0.10.0 retains the v0.9.1 routing-resilience changes. Permanent coordinates are present for the validated Fairfax routing set, including active Station 429 at 1560 Spring Hill Road. The full regional permanent-coordinate validation pass remains a separate data-quality task; stations without stored coordinates continue to use the resilient geocoding fallback and cache.
+
+
+## v0.10.0.1 deployment hotfix
+
+This hotfix isolates the v0.10 data-driven core behind `cad_*` module names.
+It prevents a mixed GitHub/Streamlit deployment from accidentally importing a
+stale v0.9 module with the same filename. The deployment ZIP also places the
+repository files at the archive root, so the contents can be copied directly
+into the GitHub repository root. No response-plan logic or CAD source data was
+changed by this hotfix.
