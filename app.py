@@ -33,39 +33,41 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CAD Response Designer v0.7.0",
-    page_icon="🚒",
+    page_title="CADence v0.8.0",
+    page_icon="C",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown(
     """
     <style>
     :root {
-        --navy-950: #0b1c2c;
-        --navy-900: #10283d;
-        --navy-800: #173a55;
-        --red-600: #b4232d;
-        --red-700: #951d25;
+        --brand-navy: #011340;
+        --action-blue: #0162E8;
+        --accent-cyan: #00D9FC;
+        --neutral-gray: #C0C0C2;
+        --charcoal: #24262A;
         --slate-700: #425466;
         --slate-500: #718096;
         --slate-300: #d9e1e8;
         --slate-200: #e7edf2;
-        --slate-100: #f3f6f8;
-        --surface: #ffffff;
+        --slate-100: #F7F9FC;
+        --surface: #FFFFFF;
         --success-bg: #e8f5ef;
         --success-fg: #236148;
     }
 
     html, body, [class*="css"] {
+        font-family: Montserrat, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-feature-settings: "tnum" 1, "ss01" 1;
     }
 
     .stApp {
+        color: var(--charcoal);
         background:
-            radial-gradient(circle at 82% -10%, rgba(23,58,85,.09), transparent 24rem),
-            linear-gradient(180deg, #f7f9fb 0%, #f1f5f8 100%);
+            radial-gradient(circle at 82% -10%, rgba(0,217,252,.07), transparent 24rem),
+            linear-gradient(180deg, #F7F9FC 0%, #F3F6FA 100%);
     }
 
     .block-container {
@@ -83,10 +85,9 @@ st.markdown(
         padding: .8rem 1rem .8rem .85rem;
         margin-bottom: .9rem;
         border-radius: 22px;
-        background: rgba(255,255,255,.92);
-        border: 1px solid rgba(217,225,232,.9);
-        box-shadow: 0 8px 30px rgba(11,28,44,.07);
-        backdrop-filter: blur(10px);
+        background: rgba(255,255,255,.96);
+        border: 1px solid rgba(192,192,194,.42);
+        box-shadow: 0 8px 26px rgba(1,19,64,.07);
     }
 
     .brand-wrap {
@@ -97,22 +98,21 @@ st.markdown(
     }
 
     .brand-mark {
+        position: relative;
         width: 42px;
         height: 42px;
         border-radius: 14px;
         display: grid;
         place-items: center;
         flex: 0 0 auto;
-        background: linear-gradient(145deg, var(--red-600), var(--red-700));
-        color: white;
-        font-size: .83rem;
-        font-weight: 850;
-        letter-spacing: .04em;
-        box-shadow: 0 5px 14px rgba(180,35,45,.23);
+        background: #F7F9FC;
+        border: 1px solid rgba(1,98,232,.12);
+        box-shadow: 0 5px 14px rgba(1,19,64,.10);
     }
 
+
     .brand-title {
-        color: var(--navy-950);
+        color: var(--brand-navy);
         font-size: 1.22rem;
         line-height: 1.08;
         font-weight: 800;
@@ -135,8 +135,9 @@ st.markdown(
     .app-status {
         border-radius: 999px;
         padding: .28rem .62rem;
-        background: #eef3f6;
-        color: var(--slate-700);
+        background: #EEF5FF;
+        color: #0162E8;
+        border: 1px solid #D9E8FF;
         font-size: .73rem;
         font-weight: 700;
         white-space: nowrap;
@@ -145,8 +146,9 @@ st.markdown(
     .version-chip {
         border-radius: 999px;
         padding: .28rem .62rem;
-        background: var(--navy-950);
+        background: var(--action-blue);
         color: white;
+        border: 1px solid rgba(0,217,252,.24);
         font-size: .72rem;
         font-weight: 760;
         white-space: nowrap;
@@ -171,22 +173,22 @@ st.markdown(
     }
 
     button[data-baseweb="tab"][aria-selected="true"] {
-        background: var(--navy-950);
+        background: var(--brand-navy);
         color: white;
-        box-shadow: 0 4px 12px rgba(11,28,44,.12);
+        box-shadow: 0 4px 12px rgba(1,19,64,.12);
     }
 
     /* Surface cards */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(255,255,255,.96);
-        border: 1px solid rgba(217,225,232,.78) !important;
+        border: 1px solid rgba(192,192,194,.46) !important;
         border-radius: 24px !important;
         box-shadow: 0 10px 30px rgba(11,28,44,.055);
         padding: .12rem;
     }
 
     .section-kicker {
-        color: var(--red-600);
+        color: #007C98;
         font-weight: 800;
         font-size: .67rem;
         letter-spacing: .13em;
@@ -195,7 +197,7 @@ st.markdown(
     }
 
     .section-title {
-        color: var(--navy-950);
+        color: var(--brand-navy);
         font-size: 1.18rem;
         font-weight: 790;
         margin-bottom: .1rem;
@@ -244,19 +246,19 @@ st.markdown(
 
     /* Primary action */
     div[data-testid="stButton"] > button[kind="primary"] {
-        background: linear-gradient(135deg, var(--red-600), var(--red-700));
+        background: linear-gradient(135deg, var(--action-blue), #014FB8);
         border: 0;
         color: white;
         font-weight: 820;
         border-radius: 999px;
         min-height: 3.15rem;
-        box-shadow: 0 8px 20px rgba(180,35,45,.2);
+        box-shadow: 0 8px 20px rgba(1,98,232,.22);
         letter-spacing: .01em;
     }
 
     div[data-testid="stButton"] > button[kind="primary"]:hover {
         filter: brightness(.96);
-        box-shadow: 0 10px 24px rgba(180,35,45,.24);
+        box-shadow: 0 10px 24px rgba(1,98,232,.26);
     }
 
     div[data-testid="stButton"] > button:not([kind="primary"]) {
@@ -266,13 +268,13 @@ st.markdown(
     /* Expanders and data surfaces */
     div[data-testid="stExpander"] {
         background: rgba(248,250,251,.82);
-        border: 1px solid var(--slate-200);
+        border: 1px solid rgba(192,192,194,.44);
         border-radius: 18px;
         overflow: hidden;
     }
 
     div[data-testid="stDataFrame"] {
-        border: 1px solid var(--slate-200);
+        border: 1px solid rgba(192,192,194,.44);
         border-radius: 16px;
         overflow: hidden;
         background: white;
@@ -293,7 +295,7 @@ st.markdown(
 
     .context-pill {
         background: #eaf0f4;
-        color: var(--navy-900);
+        color: var(--action-blue);
         border-radius: 999px;
         padding: .3rem .66rem;
         font-size: .74rem;
@@ -301,7 +303,7 @@ st.markdown(
     }
 
     .context-main {
-        color: var(--navy-950);
+        color: var(--brand-navy);
         font-size: .95rem;
         font-weight: 820;
     }
@@ -329,7 +331,7 @@ st.markdown(
     }
 
     .summary-pill strong {
-        color: var(--navy-950);
+        color: var(--brand-navy);
         margin-left: .2rem;
     }
 
@@ -352,7 +354,7 @@ st.markdown(
         padding: .85rem .9rem .82rem 3.65rem;
         border-radius: 19px;
         background: linear-gradient(155deg, #ffffff, #f8fafb);
-        border: 1px solid var(--slate-200);
+        border: 1px solid rgba(192,192,194,.44);
         box-shadow: 0 5px 16px rgba(11,28,44,.045);
     }
 
@@ -365,21 +367,21 @@ st.markdown(
         display: grid;
         place-items: center;
         border-radius: 12px;
-        background: var(--navy-950);
+        background: var(--brand-navy);
         color: white;
         font-weight: 850;
         font-size: .86rem;
     }
 
     .dispatch-unit {
-        color: var(--navy-950);
+        color: var(--brand-navy);
         font-size: 1.08rem;
         line-height: 1.05;
         font-weight: 850;
     }
 
     .dispatch-req {
-        color: var(--red-600);
+        color: var(--action-blue);
         font-size: .73rem;
         font-weight: 780;
         letter-spacing: .02em;
@@ -398,7 +400,148 @@ st.markdown(
     }
 
     hr {
-        border-color: var(--slate-200) !important;
+        border-color: rgba(192,192,194,.52) !important;
+    }
+
+    /* CADence desktop navigation rail */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #011340 0%, #021B4F 100%);
+        border-right: 1px solid rgba(0,217,252,.12);
+    }
+
+    section[data-testid="stSidebar"] > div {
+        padding-top: .8rem;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+        color: white;
+    }
+
+    .sidebar-brand {
+        padding: .7rem .55rem 1.05rem .55rem;
+        border-bottom: 1px solid rgba(255,255,255,.10);
+        margin-bottom: .7rem;
+    }
+
+    .sidebar-wordmark {
+        font-size: 1.42rem;
+        font-weight: 850;
+        letter-spacing: -.025em;
+        color: #FFFFFF;
+    }
+
+    .sidebar-wordmark .cad { color: #00D9FC; }
+
+    .sidebar-tagline {
+        margin-top: .2rem;
+        color: rgba(255,255,255,.58);
+        font-size: .64rem;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+    }
+
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        gap: .22rem;
+    }
+
+    section[data-testid="stSidebar"] label[data-baseweb="radio"] {
+        border-radius: 12px;
+        padding: .58rem .68rem;
+        color: rgba(255,255,255,.80);
+        transition: background .15s ease;
+    }
+
+    section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {
+        background: linear-gradient(135deg, #0162E8, #0756C7);
+        color: #FFFFFF;
+        box-shadow: 0 6px 16px rgba(1,98,232,.24);
+    }
+
+    section[data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child {
+        display: none;
+    }
+
+    .page-eyebrow {
+        color: #0162E8;
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+    }
+
+    .page-title {
+        margin-top: .12rem;
+        color: #011340;
+        font-size: 1.65rem;
+        line-height: 1.1;
+        font-weight: 850;
+    }
+
+    .page-subtitle {
+        margin-top: .28rem;
+        color: #718096;
+        font-size: .88rem;
+    }
+
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .8rem;
+        margin: .95rem 0 1rem 0;
+    }
+
+    .dashboard-stat {
+        position: relative;
+        overflow: hidden;
+        background: #FFFFFF;
+        border: 1px solid rgba(192,192,194,.42);
+        border-radius: 18px;
+        padding: .95rem 1rem;
+        box-shadow: 0 8px 24px rgba(1,19,64,.055);
+    }
+
+    .dashboard-stat:before {
+        content: "";
+        position: absolute;
+        left: 0; top: 0; bottom: 0; width: 4px;
+        background: #0162E8;
+    }
+
+    .dashboard-stat.cyan:before { background: #00D9FC; }
+    .dashboard-stat.navy:before { background: #011340; }
+
+    .dashboard-stat .number {
+        color: #011340;
+        font-size: 1.55rem;
+        font-weight: 850;
+    }
+
+    .dashboard-stat .label {
+        color: #718096;
+        font-size: .76rem;
+        margin-top: .12rem;
+    }
+
+    .plan-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .8rem .9rem;
+        border-radius: 14px;
+        background: #F7F9FC;
+        border: 1px solid rgba(192,192,194,.36);
+    }
+
+    .plan-name { color: #0162E8; font-weight: 800; }
+    .plan-desc { color: #718096; font-size: .78rem; margin-top: .12rem; }
+    .active-badge {
+        background: #E8F5EF; color: #236148; border-radius: 999px;
+        padding: .25rem .55rem; font-size: .7rem; font-weight: 800;
+    }
+
+    @media (max-width: 1000px) {
+        .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     /* Phone / narrow layout */
@@ -444,6 +587,10 @@ st.markdown(
             grid-template-columns: 1fr;
         }
 
+        .dashboard-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
         button[data-baseweb="tab"] {
             white-space: nowrap;
             padding-left: .72rem;
@@ -459,15 +606,19 @@ st.markdown(
     """
     <div class="appbar">
       <div class="brand-wrap">
-        <div class="brand-mark">CRD</div>
+        <div class="brand-mark"><svg viewBox="0 0 64 64" width="34" height="34" aria-label="CADence mark" role="img">
+<path d="M48 12 L32 8 L17 18 L11 32 L18 47 L33 55 L49 49" fill="none" stroke="#0162E8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M48 12 L57 20 M49 49 L57 42" fill="none" stroke="#00D9FC" stroke-width="5" stroke-linecap="round"/>
+<circle cx="48" cy="12" r="5" fill="#00D9FC"/><circle cx="11" cy="32" r="5" fill="#0162E8"/><circle cx="33" cy="55" r="5" fill="#00D9FC"/><circle cx="57" cy="20" r="6" fill="#00D9FC"/><circle cx="57" cy="42" r="6" fill="#00D9FC"/>
+</svg></div>
         <div>
-          <div class="brand-title">CAD Response Designer</div>
-          <div class="brand-sub">Response-plan simulation and regional routing</div>
+          <div class="brand-title">CADence</div>
+          <div class="brand-sub">Intelligent Response Planning</div>
         </div>
       </div>
       <div class="appbar-right">
         <span class="app-status">Simulation environment</span>
-        <span class="version-chip">v0.7.0</span>
+        <span class="version-chip">v0.8.0</span>
       </div>
     </div>
     """,
@@ -550,9 +701,30 @@ if "scenario_overrides" not in st.session_state:
 if "station_active_overrides" not in st.session_state:
     st.session_state.station_active_overrides = {}
 
-simulator_tab, station_tab, unit_tab, config_tab = st.tabs(
-    ["Dispatch Simulator", "Stations", "Units", "Configuration"]
-)
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="sidebar-brand">
+          <div style="display:flex;align-items:center;gap:.55rem;"><div style="width:30px;height:30px;display:grid;place-items:center;"><svg viewBox="0 0 64 64" width="30" height="30" aria-label="CADence mark" role="img">
+<path d="M48 12 L32 8 L17 18 L11 32 L18 47 L33 55 L49 49" fill="none" stroke="#0162E8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M48 12 L57 20 M49 49 L57 42" fill="none" stroke="#00D9FC" stroke-width="5" stroke-linecap="round"/>
+<circle cx="48" cy="12" r="5" fill="#00D9FC"/><circle cx="11" cy="32" r="5" fill="#0162E8"/><circle cx="33" cy="55" r="5" fill="#00D9FC"/><circle cx="57" cy="20" r="6" fill="#00D9FC"/><circle cx="57" cy="42" r="6" fill="#00D9FC"/>
+</svg></div><div class="sidebar-wordmark"><span class="cad">CAD</span>ence</div></div>
+          <div class="sidebar-tagline">Intelligent Response Planning</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    page = st.radio(
+        "Navigation",
+        ["Dashboard", "Dispatch Simulator", "Stations", "Units & Resources", "Configuration"],
+        label_visibility="collapsed",
+        key="cadence_page_v080",
+    )
+    st.markdown(
+        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.8.0</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _equipment_list_from_saved(saved: dict, default_value="") -> list[str]:
@@ -1030,7 +1202,62 @@ def _render_dispatch_cards(result_rows: list[dict]):
     )
 
 
-with simulator_tab:
+if page == "Dashboard":
+    _section_header(
+        "Workspace",
+        "Dashboard",
+        "Build, validate, and simulate response planning configurations.",
+    )
+
+    active_station_count = int(_effective_stations()["active"].sum())
+    unit_type_count = catalog["unit_type"].replace("", pd.NA).dropna().nunique()
+    requirement_count = len(REQUIREMENTS)
+    event_type_count = event_plan_map["event_type"].nunique()
+
+    st.markdown(
+        f"""
+        <div class="dashboard-grid">
+          <div class="dashboard-stat navy"><div class="number">1</div><div class="label">Response Plan Modeled</div></div>
+          <div class="dashboard-stat"><div class="number">{unit_type_count}</div><div class="label">Unit Types</div></div>
+          <div class="dashboard-stat cyan"><div class="number">{requirement_count}</div><div class="label">Requirements Defined</div></div>
+          <div class="dashboard-stat"><div class="number">{active_station_count}</div><div class="label">Active Stations</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left, right = st.columns([1.55, 1.0], gap="large")
+    with left:
+        with st.container(border=True):
+            _section_header("Response plans", "Current modeled plan")
+            st.markdown(
+                """
+                <div class="plan-row">
+                  <div><div class="plan-name">ALPHA</div><div class="plan-desc">EMS LEVEL 1 · All operational conditions</div></div>
+                  <span class="active-badge">Active</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.caption("Additional event types and response plans will populate this workspace as they are modeled.")
+
+    with right:
+        with st.container(border=True):
+            _section_header("Environment", "Configuration status")
+            st.markdown(
+                f"""
+                <div class="result-summary">
+                  <span class="summary-pill">Event Types <strong>{event_type_count}</strong></span>
+                  <span class="summary-pill">Conditions <strong>3</strong></span>
+                  <span class="summary-pill">Units <strong>{len(catalog):,}</strong></span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.info("Simulation environment. No connection to production I/CAD.")
+
+
+if page == "Dispatch Simulator":
     condition_records = operational_conditions(event_plan_map)
     condition_ids = [r["operational_condition"] for r in condition_records]
     condition_names = {
@@ -1508,7 +1735,7 @@ with simulator_tab:
     )
 
 
-with station_tab:
+if page == "Stations":
     _section_header(
         "Stations",
         "Regional station availability",
@@ -1604,7 +1831,7 @@ with station_tab:
         st.session_state.station_active_overrides[sid] = bool(row["Active"])
 
 
-with unit_tab:
+if page == "Units & Resources":
     _section_header(
         "Reference data",
         "CADDBM unit catalog",
@@ -1675,7 +1902,7 @@ with unit_tab:
         )
 
 
-with config_tab:
+if page == "Configuration":
     _section_header(
         "Configuration",
         "Event types, operating conditions, and response-plan definitions",
@@ -1728,6 +1955,6 @@ with config_tab:
 
 st.divider()
 st.caption(
-    "Simulation environment · No connection to production I/CAD · "
+    "CADence simulation environment · No connection to production I/CAD · "
     "OpenStreetMap data © OpenStreetMap contributors · Routing via OSRM"
 )
