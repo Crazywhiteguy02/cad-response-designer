@@ -374,9 +374,9 @@ Navy is the dominant brand surface, electric blue is reserved for primary
 actions and selected controls, and cyan is used sparingly as a technology
 accent rather than as a dominant interface color.
 
-## v0.8.0 — CADence brand-system release
+## v0.9.0 — CADence brand-system release
 
-v0.8.0 applies the approved CADence brand board as the visual baseline for the application. The validated ALPHA simulation logic and routing behavior remain unchanged.
+v0.9.0 applies the approved CADence brand board as the visual baseline for the application. The validated ALPHA simulation logic and routing behavior remain unchanged.
 
 ### Brand system
 - CADence wordmark treatment and connected-node C mark
@@ -397,3 +397,55 @@ The desktop experience now uses a dark CADence navigation rail with Dashboard, D
 A new Dashboard landing screen summarizes the modeled response plan, unit types, requirements, active stations, event types, operational conditions, and catalog size. ALPHA / EMS LEVEL 1 is surfaced as the current modeled plan.
 
 The mobile browser experience continues to use Streamlit's responsive sidebar/drawer behavior while preserving the same CADence visual system.
+
+
+## v0.9.0 Application Dashboard release
+
+v0.9.0 restructures CADence around the approved Application Dashboard brand
+baseline while preserving the validated simulation engine.
+
+### Persistent application shell
+
+- fixed Deep Navy CADence navigation rail;
+- CADence connected-node mark and `Intelligent Response Planning` tagline;
+- white top application bar;
+- global search field;
+- notification/avatar treatment;
+- persistent workspace shell across all primary sections.
+
+### Information architecture
+
+The primary navigation now follows the CADence product model:
+
+- Dashboard
+- Response Plans
+- Units & Resources
+- Capabilities
+- Equipment
+- Scenarios
+- Analysis
+- Reports
+- Settings
+
+The existing Dispatch Simulator is now the operational workflow inside
+**Scenarios**. Stations are consolidated under **Units & Resources** rather than
+occupying a separate top-level destination.
+
+### Dashboard
+
+The dashboard now follows the brand-board composition more closely:
+
+- page title and `Build. Validate. Optimize. Deploy.` subtitle;
+- four compact summary cards for Response Plans, Unit Types, Capabilities, and
+  Equipment Items;
+- application-style Response Plans table;
+- quick-access operational summary cards;
+- global search filtering for modeled response plans.
+
+Counts shown on the dashboard are derived from the current CADence data rather
+than copying the example numbers from the brand board.
+
+### Current boundaries
+
+Analysis and Reports have application-ready landing screens but their full
+workflows are not yet implemented. No production I/CAD connection is present.

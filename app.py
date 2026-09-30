@@ -33,7 +33,7 @@ from routing import (
 )
 
 st.set_page_config(
-    page_title="CADence v0.8.0",
+    page_title="CADence v0.9.0",
     page_icon="C",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -597,33 +597,270 @@ st.markdown(
             padding-right: .72rem;
         }
     }
+    /* v0.9 dashboard shell */
+    section[data-testid="stSidebar"] {
+        width: 250px !important;
+        min-width: 250px !important;
+    }
+
+    section[data-testid="stSidebar"] .stRadio label {
+        min-height: 2.35rem;
+        display: flex;
+        align-items: center;
+        font-size: .82rem;
+        font-weight: 650;
+    }
+
+    .st-key-global_topbar {
+        background: #FFFFFF;
+        border: 1px solid rgba(192,192,194,.42);
+        border-radius: 18px;
+        padding: .42rem .6rem .35rem .6rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 6px 18px rgba(1,19,64,.05);
+    }
+
+    .st-key-global_topbar div[data-baseweb="input"] > div {
+        background: #F7F9FC;
+        border: 1px solid rgba(192,192,194,.55);
+        border-radius: 10px !important;
+        min-height: 2.35rem;
+    }
+
+    .top-user {
+        min-height: 2.35rem;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .58rem;
+        white-space: nowrap;
+    }
+
+    .top-bell {
+        width: 31px;
+        height: 31px;
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        color: #011340;
+        background: #F7F9FC;
+        border: 1px solid rgba(192,192,194,.44);
+        font-size: .88rem;
+    }
+
+    .top-avatar {
+        width: 31px;
+        height: 31px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #FFFFFF;
+        background: #0162E8;
+        font-size: .72rem;
+        font-weight: 800;
+    }
+
+    .top-user-name {
+        color: #24262A;
+        font-size: .78rem;
+        font-weight: 700;
+    }
+
+    .workspace-heading {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin: .3rem 0 .85rem 0;
+    }
+
+    .workspace-title {
+        color: #011340;
+        font-size: 1.72rem;
+        line-height: 1.05;
+        font-weight: 850;
+        letter-spacing: -.025em;
+    }
+
+    .workspace-subtitle {
+        margin-top: .28rem;
+        color: #718096;
+        font-size: .83rem;
+    }
+
+    .dashboard-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .75rem;
+        margin-bottom: .9rem;
+    }
+
+    .kpi-card {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        align-items: center;
+        gap: .72rem;
+        min-height: 92px;
+        padding: .78rem .85rem;
+        background: #FFFFFF;
+        border: 1px solid rgba(192,192,194,.40);
+        border-radius: 14px;
+        box-shadow: 0 5px 18px rgba(1,19,64,.045);
+    }
+
+    .kpi-icon {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        color: #FFFFFF;
+        font-size: 1.05rem;
+        font-weight: 800;
+    }
+
+    .kpi-icon.blue { background: linear-gradient(145deg,#0162E8,#0756C7); }
+    .kpi-icon.cyan { background: linear-gradient(145deg,#00BFD9,#00D9FC); }
+    .kpi-icon.navy { background: linear-gradient(145deg,#011340,#02215F); }
+    .kpi-icon.charcoal { background: linear-gradient(145deg,#24262A,#454950); }
+
+    .kpi-label {
+        color: #718096;
+        font-size: .68rem;
+        font-weight: 650;
+    }
+
+    .kpi-number {
+        color: #011340;
+        font-size: 1.38rem;
+        font-weight: 850;
+        line-height: 1.02;
+        margin-top: .05rem;
+    }
+
+    .kpi-caption {
+        color: #718096;
+        font-size: .66rem;
+        margin-top: .13rem;
+    }
+
+    .panel-shell {
+        background: #FFFFFF;
+        border: 1px solid rgba(192,192,194,.40);
+        border-radius: 15px;
+        padding: .9rem;
+        box-shadow: 0 5px 18px rgba(1,19,64,.04);
+        margin-bottom: .8rem;
+    }
+
+    .panel-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .8rem;
+        margin-bottom: .65rem;
+    }
+
+    .panel-title {
+        color: #011340;
+        font-size: .96rem;
+        font-weight: 800;
+    }
+
+    .panel-link {
+        color: #0162E8;
+        font-size: .7rem;
+        font-weight: 750;
+    }
+
+    .app-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        overflow: hidden;
+        border-radius: 11px;
+        border: 1px solid rgba(192,192,194,.36);
+    }
+
+    .app-table th {
+        padding: .56rem .65rem;
+        background: #F7F9FC;
+        color: #4B5563;
+        font-size: .65rem;
+        text-align: left;
+        font-weight: 750;
+        border-bottom: 1px solid rgba(192,192,194,.34);
+    }
+
+    .app-table td {
+        padding: .62rem .65rem;
+        color: #24262A;
+        font-size: .72rem;
+        background: #FFFFFF;
+        border-bottom: 1px solid rgba(192,192,194,.24);
+    }
+
+    .app-table tr:last-child td { border-bottom: 0; }
+    .table-link { color: #0162E8; font-weight: 780; }
+
+    .status-active {
+        display: inline-block;
+        padding: .18rem .45rem;
+        border-radius: 999px;
+        background: #E8F5EF;
+        color: #236148;
+        font-size: .64rem;
+        font-weight: 800;
+    }
+
+    .status-modeled {
+        display: inline-block;
+        padding: .18rem .45rem;
+        border-radius: 999px;
+        background: #EEF5FF;
+        color: #0162E8;
+        font-size: .64rem;
+        font-weight: 800;
+    }
+
+    .quick-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .72rem;
+    }
+
+    .quick-card {
+        min-height: 88px;
+        padding: .8rem;
+        border-radius: 14px;
+        background: #FFFFFF;
+        border: 1px solid rgba(192,192,194,.38);
+        box-shadow: 0 4px 15px rgba(1,19,64,.035);
+    }
+
+    .quick-title { color:#011340; font-size:.78rem; font-weight:800; }
+    .quick-copy { color:#718096; font-size:.68rem; margin-top:.25rem; line-height:1.4; }
+
+    @media (max-width: 1050px) {
+        .dashboard-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+        .quick-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"] {
+            width: auto !important;
+            min-width: auto !important;
+        }
+        .dashboard-kpis { grid-template-columns: 1fr 1fr; }
+        .top-user-name { display:none; }
+        .workspace-title { font-size:1.45rem; }
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <div class="appbar">
-      <div class="brand-wrap">
-        <div class="brand-mark"><svg viewBox="0 0 64 64" width="34" height="34" aria-label="CADence mark" role="img">
-<path d="M48 12 L32 8 L17 18 L11 32 L18 47 L33 55 L49 49" fill="none" stroke="#0162E8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M48 12 L57 20 M49 49 L57 42" fill="none" stroke="#00D9FC" stroke-width="5" stroke-linecap="round"/>
-<circle cx="48" cy="12" r="5" fill="#00D9FC"/><circle cx="11" cy="32" r="5" fill="#0162E8"/><circle cx="33" cy="55" r="5" fill="#00D9FC"/><circle cx="57" cy="20" r="6" fill="#00D9FC"/><circle cx="57" cy="42" r="6" fill="#00D9FC"/>
-</svg></div>
-        <div>
-          <div class="brand-title">CADence</div>
-          <div class="brand-sub">Intelligent Response Planning</div>
-        </div>
-      </div>
-      <div class="appbar-right">
-        <span class="app-status">Simulation environment</span>
-        <span class="version-chip">v0.8.0</span>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 catalog = load_catalog()
 stations = load_station_crosswalk()
@@ -717,14 +954,46 @@ with st.sidebar:
     )
     page = st.radio(
         "Navigation",
-        ["Dashboard", "Dispatch Simulator", "Stations", "Units & Resources", "Configuration"],
+        [
+            "Dashboard",
+            "Response Plans",
+            "Units & Resources",
+            "Capabilities",
+            "Equipment",
+            "Scenarios",
+            "Analysis",
+            "Reports",
+            "Settings",
+        ],
         label_visibility="collapsed",
-        key="cadence_page_v080",
+        key="cadence_page_v090",
     )
     st.markdown(
-        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.8.0</div>',
+        '<div style="margin-top:1rem;color:rgba(255,255,255,.38);font-size:.68rem;">CADence v0.9.0</div>',
         unsafe_allow_html=True,
     )
+
+
+with st.container(key="global_topbar"):
+    search_col, user_col = st.columns([4.6, 1.4], vertical_alignment="center")
+    with search_col:
+        global_search = st.text_input(
+            "Global search",
+            placeholder="Search plans, units, or scenarios...",
+            label_visibility="collapsed",
+            key="cadence_global_search_v090",
+        )
+    with user_col:
+        st.markdown(
+            """
+            <div class="top-user">
+              <div class="top-bell">◌</div>
+              <div class="top-avatar">C</div>
+              <div class="top-user-name">CADence User ▾</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def _equipment_list_from_saved(saved: dict, default_value="") -> list[str]:
@@ -1167,6 +1436,20 @@ def _section_header(kicker: str, title: str, note: str | None = None):
     )
 
 
+def _workspace_header(title: str, subtitle: str):
+    st.markdown(
+        f"""
+        <div class="workspace-heading">
+          <div>
+            <div class="workspace-title">{html.escape(title)}</div>
+            <div class="workspace-subtitle">{html.escape(subtitle)}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_dispatch_cards(result_rows: list[dict]):
     """Render the primary dispatch result as application cards rather than a spreadsheet."""
     cards = []
@@ -1203,61 +1486,360 @@ def _render_dispatch_cards(result_rows: list[dict]):
 
 
 if page == "Dashboard":
-    _section_header(
-        "Workspace",
-        "Dashboard",
-        "Build, validate, and simulate response planning configurations.",
-    )
+    _workspace_header("Dashboard", "Build. Validate. Optimize. Deploy.")
 
     active_station_count = int(_effective_stations()["active"].sum())
     unit_type_count = catalog["unit_type"].replace("", pd.NA).dropna().nunique()
-    requirement_count = len(REQUIREMENTS)
-    event_type_count = event_plan_map["event_type"].nunique()
+    response_plan_count = event_plan_map["response_plan_id"].replace("", pd.NA).dropna().nunique()
+    capability_count = len(ATTRIBUTE_OPTIONS) + 1  # modeled unit attributes + personnel skill M
+    equipment_count = len(EQUIPMENT_OPTIONS)
 
     st.markdown(
         f"""
-        <div class="dashboard-grid">
-          <div class="dashboard-stat navy"><div class="number">1</div><div class="label">Response Plan Modeled</div></div>
-          <div class="dashboard-stat"><div class="number">{unit_type_count}</div><div class="label">Unit Types</div></div>
-          <div class="dashboard-stat cyan"><div class="number">{requirement_count}</div><div class="label">Requirements Defined</div></div>
-          <div class="dashboard-stat"><div class="number">{active_station_count}</div><div class="label">Active Stations</div></div>
+        <div class="dashboard-kpis">
+          <div class="kpi-card">
+            <div class="kpi-icon blue">▤</div>
+            <div>
+              <div class="kpi-label">Response Plans</div>
+              <div class="kpi-number">{response_plan_count}</div>
+              <div class="kpi-caption">Modeled plans</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon cyan">◎</div>
+            <div>
+              <div class="kpi-label">Unit Types</div>
+              <div class="kpi-number">{unit_type_count}</div>
+              <div class="kpi-caption">Configured in catalog</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon navy">✦</div>
+            <div>
+              <div class="kpi-label">Capabilities</div>
+              <div class="kpi-number">{capability_count}</div>
+              <div class="kpi-caption">Attributes + personnel skill</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon charcoal">◇</div>
+            <div>
+              <div class="kpi-label">Equipment Items</div>
+              <div class="kpi-number">{equipment_count}</div>
+              <div class="kpi-caption">Modeled equipment codes</div>
+            </div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    left, right = st.columns([1.55, 1.0], gap="large")
-    with left:
-        with st.container(border=True):
-            _section_header("Response plans", "Current modeled plan")
-            st.markdown(
-                """
-                <div class="plan-row">
-                  <div><div class="plan-name">ALPHA</div><div class="plan-desc">EMS LEVEL 1 · All operational conditions</div></div>
-                  <span class="active-badge">Active</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
+    plan_rows = (
+        event_plan_map[
+            ["response_plan_id", "event_type", "description"]
+        ]
+        .drop_duplicates()
+        .sort_values(["response_plan_id", "event_type"])
+    )
+    if global_search.strip():
+        q = global_search.strip().lower()
+        plan_rows = plan_rows[
+            plan_rows.astype(str).apply(
+                lambda row: row.str.lower().str.contains(q, regex=False).any(),
+                axis=1,
             )
-            st.caption("Additional event types and response plans will populate this workspace as they are modeled.")
+        ]
 
-    with right:
-        with st.container(border=True):
-            _section_header("Environment", "Configuration status")
-            st.markdown(
-                f"""
-                <div class="result-summary">
-                  <span class="summary-pill">Event Types <strong>{event_type_count}</strong></span>
-                  <span class="summary-pill">Conditions <strong>3</strong></span>
-                  <span class="summary-pill">Units <strong>{len(catalog):,}</strong></span>
-                </div>
-                """,
-                unsafe_allow_html=True,
+    table_rows = []
+    for _, row in plan_rows.iterrows():
+        plan_id = html.escape(str(row["response_plan_id"]))
+        event_code = html.escape(str(row["event_type"]))
+        desc = html.escape(str(row["description"]))
+        table_rows.append(
+            "<tr>"
+            f'<td><span class="table-link">{plan_id}</span></td>'
+            f"<td>{event_code}</td>"
+            f"<td>{desc}</td>"
+            '<td><span class="status-active">Active</span></td>'
+            "<td>•••</td>"
+            "</tr>"
+        )
+
+    st.markdown(
+        f"""
+        <div class="panel-shell">
+          <div class="panel-heading">
+            <div class="panel-title">Response Plans</div>
+            <div class="panel-link">Current modeled configuration</div>
+          </div>
+          <table class="app-table">
+            <thead>
+              <tr>
+                <th>Plan Name</th>
+                <th>Event Type</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {''.join(table_rows) if table_rows else '<tr><td colspan="5">No matching plans</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div class="quick-grid">
+          <div class="quick-card">
+            <div class="quick-title">Scenario Simulator</div>
+            <div class="quick-copy">Run an event type against available units, operational conditions, and road-network routing.</div>
+          </div>
+          <div class="quick-card">
+            <div class="quick-title">Regional Resources</div>
+            <div class="quick-copy">{len(catalog):,} imported unit records across {active_station_count} active routing stations.</div>
+          </div>
+          <div class="quick-card">
+            <div class="quick-title">Operational Conditions</div>
+            <div class="quick-copy">Condition 1 Normal Operations, Condition 2 High Call Volume, and Condition 3 &gt;50% Unit Utilization.</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+if page == "Response Plans":
+    _workspace_header("Response Plans", "Event types, operational conditions, and their associated CAD response plans.")
+
+    plan_count = event_plan_map["response_plan_id"].replace("", pd.NA).dropna().nunique()
+    event_count = event_plan_map["event_type"].replace("", pd.NA).dropna().nunique()
+    condition_count = event_plan_map["operational_condition"].replace("", pd.NA).dropna().nunique()
+
+    st.markdown(
+        f"""
+        <div class="dashboard-kpis">
+          <div class="kpi-card"><div class="kpi-icon blue">▤</div><div><div class="kpi-label">Response Plans</div><div class="kpi-number">{plan_count}</div><div class="kpi-caption">Modeled</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon cyan">E</div><div><div class="kpi-label">Event Types</div><div class="kpi-number">{event_count}</div><div class="kpi-caption">Mapped</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon navy">3</div><div><div class="kpi-label">Conditions</div><div class="kpi-number">{condition_count}</div><div class="kpi-caption">Operational modes</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon charcoal">✓</div><div><div class="kpi-label">Validated Plan</div><div class="kpi-number">1</div><div class="kpi-caption">ALPHA baseline</div></div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(border=True):
+        _section_header("Mappings", "Event Type → Response Plan")
+        mapping_display = event_plan_map.rename(columns={
+            "event_type": "Event Type",
+            "description": "Description",
+            "operational_condition": "Condition",
+            "condition_name": "Condition Name",
+            "response_plan_id": "Response Plan",
+        })[
+            ["Condition", "Condition Name", "Event Type", "Description", "Response Plan"]
+        ]
+        st.dataframe(mapping_display, hide_index=True, use_container_width=True)
+
+    with st.expander("ALPHA Response Plan Flow", expanded=False):
+        for n in sorted(ALPHA_STEPS):
+            s = ALPHA_STEPS[n]
+            if s.kind == "GROUP":
+                detail = " OR ".join(s.alternatives)
+            elif s.requirement:
+                detail = s.requirement
+            else:
+                detail = ""
+            extra = (
+                f" | CAD Max Distance {s.max_time_minutes:g} = "
+                f"{s.max_time_minutes:g} min"
+                if s.max_time_minutes is not None
+                else ""
             )
-            st.info("Simulation environment. No connection to production I/CAD.")
+            st.write(f"**Step {s.number}: {s.label}** — {detail}{extra}")
 
 
-if page == "Dispatch Simulator":
+if page == "Units & Resources":
+    _workspace_header("Units & Resources", "Manage the regional unit inventory and station availability.")
+
+    units_tab, stations_tab = st.tabs(["Units", "Stations"])
+
+    with units_tab:
+        unit_type_count = catalog["unit_type"].replace("", pd.NA).dropna().nunique()
+        unit_station_count = catalog["station_id"].replace("", pd.NA).dropna().nunique()
+        st.markdown(
+            f"""
+            <div class="result-summary">
+              <span class="summary-pill">Units <strong>{len(catalog):,}</strong></span>
+              <span class="summary-pill">Types <strong>{unit_type_count}</strong></span>
+              <span class="summary-pill">Stations <strong>{unit_station_count}</strong></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        search_c, type_c = st.columns([2.2, 1.0])
+        with search_c:
+            unit_search = st.text_input(
+                "Search unit ID, type, beat, or station",
+                value=global_search if global_search else "",
+                key="unit_search_v090",
+            )
+        with type_c:
+            type_values = ["All"] + sorted(
+                x for x in catalog["unit_type"].unique() if x
+            )
+            selected_type = st.selectbox("Unit Type", type_values, key="unit_type_filter_v090")
+
+        view = catalog.copy()
+        if unit_search.strip():
+            q = unit_search.strip().lower()
+            mask = (
+                view["unit_id"].str.lower().str.contains(q, regex=False)
+                | view["unit_type"].str.lower().str.contains(q, regex=False)
+                | view["beat"].str.lower().str.contains(q, regex=False)
+                | view["station_id"].str.lower().str.contains(q, regex=False)
+            )
+            view = view[mask]
+        if selected_type != "All":
+            view = view[view["unit_type"] == selected_type]
+
+        display = view.rename(columns={
+            "unit_id": "Unit ID",
+            "unit_type": "Unit Type",
+            "beat": "Beat",
+            "station_id": "Station",
+            "default_attributes": "Capabilities",
+            "default_m_skill": "M Skills",
+            "default_equipment": "Equipment",
+            "typical_als_equipment": "Typical ALS Equipment",
+        })[
+            ["Unit ID", "Unit Type", "Beat", "Station", "Capabilities", "M Skills", "Equipment", "Typical ALS Equipment"]
+        ]
+        st.dataframe(display.head(1000), hide_index=True, use_container_width=True)
+
+    with stations_tab:
+        effective_stations = _effective_stations()
+        active_station_count = int(effective_stations["active"].sum())
+        jurisdiction_count = effective_stations["jurisdiction"].replace("", pd.NA).dropna().nunique()
+
+        st.markdown(
+            f"""
+            <div class="result-summary">
+              <span class="summary-pill">Active Stations <strong>{active_station_count}</strong></span>
+              <span class="summary-pill">Jurisdictions <strong>{jurisdiction_count}</strong></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        station_search = st.text_input(
+            "Search station ID, jurisdiction, name, or address",
+            key="station_search_v090",
+        )
+        station_view = effective_stations.copy()
+        if station_search.strip():
+            q = station_search.strip().lower()
+            mask = (
+                station_view["cad_station_id"].str.lower().str.contains(q, regex=False)
+                | station_view["jurisdiction"].str.lower().str.contains(q, regex=False)
+                | station_view["station_name"].str.lower().str.contains(q, regex=False)
+                | station_view["address"].str.lower().str.contains(q, regex=False)
+            )
+            station_view = station_view[mask]
+
+        station_display = station_view.rename(columns={
+            "active": "Active",
+            "cad_station_id": "CAD Station ID",
+            "jurisdiction": "Jurisdiction",
+            "local_station_number": "Local Station",
+            "station_name": "Station Name",
+            "address": "Routing Address",
+        })[
+            ["Active", "CAD Station ID", "Jurisdiction", "Local Station", "Station Name", "Routing Address"]
+        ]
+
+        edited_stations = st.data_editor(
+            station_display,
+            hide_index=True,
+            use_container_width=True,
+            disabled=["CAD Station ID", "Jurisdiction", "Local Station", "Station Name", "Routing Address"],
+            column_config={
+                "Active": st.column_config.CheckboxColumn("Active", width="small"),
+                "CAD Station ID": st.column_config.TextColumn("Station", width="small"),
+                "Jurisdiction": st.column_config.TextColumn("Jurisdiction", width="medium"),
+                "Local Station": st.column_config.TextColumn("Local", width="small"),
+                "Station Name": st.column_config.TextColumn("Station Name", width="medium"),
+                "Routing Address": st.column_config.TextColumn("Routing Address", width="large"),
+            },
+            key="station_editor_v090",
+        )
+        for _, row in edited_stations.iterrows():
+            sid = str(row["CAD Station ID"])
+            st.session_state.station_active_overrides[sid] = bool(row["Active"])
+
+
+if page == "Capabilities":
+    _workspace_header("Capabilities", "Requirements, unit attributes, and personnel skills used by response-plan logic.")
+
+    st.markdown(
+        f"""
+        <div class="dashboard-kpis">
+          <div class="kpi-card"><div class="kpi-icon blue">R</div><div><div class="kpi-label">Requirements</div><div class="kpi-number">{len(REQUIREMENTS)}</div><div class="kpi-caption">Modeled definitions</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon cyan">A</div><div><div class="kpi-label">Attributes</div><div class="kpi-number">{len(ATTRIBUTE_OPTIONS)}</div><div class="kpi-caption">Known capability codes</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon navy">M</div><div><div class="kpi-label">Personnel Skills</div><div class="kpi-number">1</div><div class="kpi-caption">M = Paramedic</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon charcoal">✓</div><div><div class="kpi-label">Slot Capacity</div><div class="kpi-number">1</div><div class="kpi-caption">Exclusive resource slot</div></div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    req_rows = []
+    for name, r in REQUIREMENTS.items():
+        req_rows.append({
+            "Requirement": name,
+            "Quantity": r.quantity,
+            "Unit Type": r.unit_type or "",
+            "Unit ID": r.unit_id or "",
+            "Attributes": ", ".join(r.attributes),
+            "Equipment": ", ".join(r.equipment),
+            "Skills": ", ".join(r.skills),
+            "Beat": r.beat_option,
+            "Eq/Skill Option": r.equipment_skill_option,
+        })
+    st.dataframe(pd.DataFrame(req_rows), hide_index=True, use_container_width=True)
+
+    with st.expander("Known Unit Attributes", expanded=False):
+        st.write(", ".join(ATTRIBUTE_OPTIONS))
+
+
+if page == "Equipment":
+    _workspace_header("Equipment", "Equipment codes used for unit capability and response-plan qualification.")
+
+    equipment_rows = [{"Equipment Code": code, "Status": "Modeled"} for code in EQUIPMENT_OPTIONS]
+    st.markdown(
+        f"""
+        <div class="dashboard-kpis">
+          <div class="kpi-card"><div class="kpi-icon blue">◇</div><div><div class="kpi-label">Equipment Items</div><div class="kpi-number">{len(EQUIPMENT_OPTIONS)}</div><div class="kpi-caption">Current modeled codes</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon cyan">1</div><div><div class="kpi-label">ALS Level 1</div><div class="kpi-number">AFR1</div><div class="kpi-caption">Typical engine ALS equipment</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon navy">2</div><div><div class="kpi-label">ALS Level 2</div><div class="kpi-number">AFR2</div><div class="kpi-caption">Typical special-service ALS equipment</div></div></div>
+          <div class="kpi-card"><div class="kpi-icon charcoal">M</div><div><div class="kpi-label">Skill Model</div><div class="kpi-number">M</div><div class="kpi-caption">Tracked separately from equipment</div></div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.dataframe(pd.DataFrame(equipment_rows), hide_index=True, use_container_width=True)
+
+
+if page == "Scenarios":
+    _workspace_header(
+        "Scenarios",
+        "Simulate an event type against operational conditions, available units, and routing.",
+    )
+
     condition_records = operational_conditions(event_plan_map)
     condition_ids = [r["operational_condition"] for r in condition_records]
     condition_names = {
@@ -1735,222 +2317,82 @@ if page == "Dispatch Simulator":
     )
 
 
-if page == "Stations":
-    _section_header(
-        "Stations",
-        "Regional station availability",
-        "Turn stations on or off for routing scenarios. Changes apply to the current app session.",
-    )
+if page == "Analysis":
+    _workspace_header("Analysis", "Compare response behavior, requirements, and resource utilization.")
 
-    effective_stations = _effective_stations()
-
-    active_station_count = int(effective_stations["active"].sum())
-    jurisdiction_count = (
-        effective_stations["jurisdiction"].replace("", pd.NA).dropna().nunique()
-    )
     st.markdown(
-        f"""
-        <div class="result-summary">
-          <span class="summary-pill">Active Stations <strong>{active_station_count}</strong></span>
-          <span class="summary-pill">Jurisdictions <strong>{jurisdiction_count}</strong></span>
+        """
+        <div class="quick-grid">
+          <div class="quick-card">
+            <div class="quick-title">Scenario Comparison</div>
+            <div class="quick-copy">Compare the same incident across operational conditions or future response-plan revisions.</div>
+          </div>
+          <div class="quick-card">
+            <div class="quick-title">Over-Recommendation Review</div>
+            <div class="quick-copy">Future analysis will identify resources recommended beyond the operational requirement set.</div>
+          </div>
+          <div class="quick-card">
+            <div class="quick-title">Coverage Analysis</div>
+            <div class="quick-copy">Evaluate how routing, unit availability, and station status affect candidate selection.</div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    search_c, reset_c = st.columns([3.0, 1.0], gap="large")
-    with search_c:
-        station_search = st.text_input(
-            "Search station ID, jurisdiction, name, or address",
-            "",
-            key="station_search_v070",
-        )
-    with reset_c:
-        st.write("")
-        st.write("")
-        if st.button("Restore station defaults", use_container_width=True):
-            st.session_state.station_active_overrides = {}
-            st.session_state.pop("station_editor_v070", None)
-            st.rerun()
-
-    station_view = effective_stations.copy()
-    if station_search.strip():
-        s = station_search.strip().lower()
-        mask = (
-            station_view["cad_station_id"].str.lower().str.contains(s, regex=False)
-            | station_view["jurisdiction"].str.lower().str.contains(s, regex=False)
-            | station_view["station_name"].str.lower().str.contains(s, regex=False)
-            | station_view["address"].str.lower().str.contains(s, regex=False)
-        )
-        station_view = station_view[mask]
-
-    display_stations = station_view.rename(columns={
-        "cad_station_id": "CAD Station ID",
-        "jurisdiction": "Jurisdiction",
-        "local_station_number": "Local Station",
-        "station_name": "Station Name",
-        "address": "Routing Address",
-        "active": "Active",
-    })[
-        [
-            "Active", "CAD Station ID", "Jurisdiction", "Local Station",
-            "Station Name", "Routing Address"
-        ]
-    ]
-
-    st.caption("Uncheck **Active** to exclude a station and its assigned units from OSM routing.")
-
-    edited_stations = st.data_editor(
-        display_stations,
-        hide_index=True,
-        use_container_width=True,
-        disabled=[
-            "CAD Station ID",
-            "Jurisdiction",
-            "Local Station",
-            "Station Name",
-            "Routing Address",
-        ],
-        column_config={
-            "Active": st.column_config.CheckboxColumn(
-                "Active",
-                help="Enabled stations may be used as routing origins.",
-                width="small",
-            ),
-            "CAD Station ID": st.column_config.TextColumn("Station", width="small"),
-            "Jurisdiction": st.column_config.TextColumn("Jurisdiction", width="medium"),
-            "Local Station": st.column_config.TextColumn("Local", width="small"),
-            "Station Name": st.column_config.TextColumn("Station Name", width="medium"),
-            "Routing Address": st.column_config.TextColumn("Routing Address", width="large"),
-        },
-        key="station_editor_v070",
-    )
-
-    for _, row in edited_stations.iterrows():
-        sid = str(row["CAD Station ID"])
-        st.session_state.station_active_overrides[sid] = bool(row["Active"])
+    st.info("Analysis workflows will expand as additional response plans are modeled.")
 
 
-if page == "Units & Resources":
-    _section_header(
-        "Reference data",
-        "CADDBM unit catalog",
-        "Search the imported unit inventory and modeled default capabilities.",
-    )
+if page == "Reports":
+    _workspace_header("Reports", "Create auditable outputs from modeled response plans and simulation scenarios.")
 
-    unit_type_count = catalog["unit_type"].replace("", pd.NA).dropna().nunique()
-    unit_station_count = catalog["station_id"].replace("", pd.NA).dropna().nunique()
     st.markdown(
-        f"""
-        <div class="result-summary">
-          <span class="summary-pill">Units <strong>{len(catalog):,}</strong></span>
-          <span class="summary-pill">Types <strong>{unit_type_count}</strong></span>
-          <span class="summary-pill">Stations <strong>{unit_station_count}</strong></span>
+        """
+        <div class="quick-grid">
+          <div class="quick-card">
+            <div class="quick-title">Simulation Report</div>
+            <div class="quick-copy">Planned output: event type, condition, selected units, satisfied requirements, and routing details.</div>
+          </div>
+          <div class="quick-card">
+            <div class="quick-title">Response Plan Comparison</div>
+            <div class="quick-copy">Planned output: side-by-side differences between production and proposed response-plan structures.</div>
+          </div>
+          <div class="quick-card">
+            <div class="quick-title">Configuration Audit</div>
+            <div class="quick-copy">Planned output: event-type mappings, requirements, capabilities, equipment, and station state.</div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    search_c, type_c = st.columns([2.2, 1.0])
-    with search_c:
-        search = st.text_input(
-            "Search Unit ID / type / beat / station",
-            "",
-            key="unit_search_v070",
-        )
-    with type_c:
-        type_values = ["All"] + sorted(
-            x for x in catalog["unit_type"].unique() if x
-        )
-        selected_type = st.selectbox("Unit Type", type_values)
-
-    view = catalog.copy()
-    if search.strip():
-        s = search.strip().lower()
-        mask = (
-            view["unit_id"].str.lower().str.contains(s, regex=False)
-            | view["unit_type"].str.lower().str.contains(s, regex=False)
-            | view["beat"].str.lower().str.contains(s, regex=False)
-            | view["station_id"].str.lower().str.contains(s, regex=False)
-        )
-        view = view[mask]
-    if selected_type != "All":
-        view = view[view["unit_type"] == selected_type]
-
-    display = view.rename(columns={
-        "unit_id": "Unit ID",
-        "unit_type": "Unit Type",
-        "beat": "Beat",
-        "station_id": "Station",
-        "default_attributes": "Modeled Attributes",
-        "default_m_skill": "Default M Skills",
-        "default_equipment": "Default Equipment",
-        "typical_als_equipment": "Typical ALS Equipment",
-        "attribute_source": "Attribute Source",
-    })[
-        [
-            "Unit ID", "Unit Type", "Beat", "Station",
-            "Modeled Attributes", "Default M Skills", "Default Equipment",
-            "Typical ALS Equipment", "Attribute Source"
-        ]
-    ]
-    st.dataframe(display.head(1000), hide_index=True, use_container_width=True)
-    if len(display) > 1000:
-        st.caption(
-            f"Showing the first 1,000 of {len(display):,} matching records. "
-            "Narrow the search to see a specific unit."
-        )
+    st.info("Report generation is not yet enabled in this release.")
 
 
-if page == "Configuration":
-    _section_header(
-        "Configuration",
-        "Event types, operating conditions, and response-plan definitions",
-        "The dispatcher-facing event type is kept separate from the response plan it invokes.",
-    )
+if page == "Settings":
+    _workspace_header("Settings", "Operational-condition definitions and simulation environment settings.")
 
-    mapping_tab, requirements_tab = st.tabs(
-        ["Event Type → Response Plan", "Requirement Library"]
-    )
-
-    with mapping_tab:
-        st.markdown("#### Operational conditions")
+    with st.container(border=True):
+        _section_header("Operational conditions", "CADence environment")
         st.write(
             "**Condition 1:** Normal Operations  ·  "
             "**Condition 2:** High Call Volume  ·  "
             "**Condition 3:** >50% Unit Utilization"
         )
-
-        mapping_display = event_plan_map.rename(columns={
-            "event_type": "Event Type",
-            "description": "Description",
-            "operational_condition": "Condition",
-            "condition_name": "Condition Name",
-            "response_plan_id": "Response Plan",
-        })[
-            ["Condition", "Condition Name", "Event Type", "Description", "Response Plan"]
-        ]
-        st.dataframe(mapping_display, hide_index=True, use_container_width=True)
-        st.info(
-            "ALPHA — EMS LEVEL 1 is explicitly mapped to response plan ALPHA under all "
-            "three operational conditions. Future event types can map to different plans by condition."
+        st.caption(
+            "Event types remain dispatcher-facing identifiers. The associated response plan "
+            "is resolved from the event type and operational condition."
         )
 
-    with requirements_tab:
-        req_rows = []
-        for name, r in REQUIREMENTS.items():
-            req_rows.append({
-                "Requirement": name,
-                "Quantity": r.quantity,
-                "Unit Type": r.unit_type or "",
-                "Unit ID": r.unit_id or "",
-                "Attributes": ", ".join(r.attributes),
-                "Equipment": ", ".join(r.equipment),
-                "Skills": ", ".join(r.skills),
-                "Beat": r.beat_option,
-                "Eq/Skill Option": r.equipment_skill_option,
-            })
-        st.dataframe(pd.DataFrame(req_rows), hide_index=True, use_container_width=True)
+    with st.container(border=True):
+        _section_header("Routing", "Current engine")
+        st.write("OpenStreetMap / OSRM")
+        st.caption(
+            "Routing is independent of Hexagon street-network configuration and may produce different travel times."
+        )
+
+    with st.container(border=True):
+        _section_header("Environment", "Deployment status")
+        st.write("Simulation environment")
+        st.caption("No connection to production I/CAD.")
 
 
 st.divider()
